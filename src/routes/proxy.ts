@@ -11,8 +11,11 @@ const router = new Router();
 const defaultAppAUrl = 'http://10.82.1.228:3001';
 const targetBase = getEnvVar('APP_A_URL', defaultAppAUrl);
 
-router.all('(.*)', async (ctx: Context) => {
-  const targetUrl = `${targetBase}${ctx.path}${ctx.search || ''}`;
+// Only proxy requests starting with /bioddex
+router.all('/bioddex(.*)', async (ctx: Context) => {
+  // Remove the /bioddex prefix when forwarding to the target
+  const proxiedPath = ctx.path.replace(/^\/bioddex/, '') || '/';
+  const targetUrl = `${targetBase}${proxiedPath}${ctx.search || ''}`;
 
   const url = new URL(targetUrl);
   const isHttps = url.protocol === 'https:';
