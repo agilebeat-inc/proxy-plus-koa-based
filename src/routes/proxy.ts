@@ -6,10 +6,11 @@ import https from 'https';
 import { URL } from 'url';
 // Remove the import of Context from 'koa-websocket' if present
 import type { Context } from 'koa';
+import logger from '../utils/logger';
 
 const router = new Router();
 
-const DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/bioddex(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
+const DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
 
 function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
   let dynamicRoutes: Array<{ name: string; route: string; target: string }> = [];
@@ -22,6 +23,18 @@ function getDynamicRoutes(drString: string): Array<{ name: string; route: string
 }
 
 const dynamicRoutes = getDynamicRoutes(DYNAMIC_ROUTES);
+
+// Add default route to redirect to the first dynamic route if not already present
+if (dynamicRoutes.length > 0) {
+  const { route } = dynamicRoutes[0];
+  // Only add if the first route is not already '/'
+  if (route !== '/') {
+    const redirectPath = route.replace(/\(\.\*\)$/, '');
+    router.get('/', async (ctx) => {
+      ctx.redirect(`${redirectPath}/`);
+    });
+  }
+}
 dynamicRoutes.forEach(({ name, route, target }) => {
   router.all(route, async (ctx) => {
     const prefixForRoute = route.replace(/\(.*\)$/, '');
@@ -90,14 +103,13 @@ dynamicRoutes.forEach(({ name, route, target }) => {
   });
 });
 
-
 // Prevent direct access to proxied backend URLs (bypass fix)
 router.all(/^\/(http|https):\/\//, async (ctx) => {
   ctx.status = 403;
   ctx.body = 'Direct backend URL access is forbidden.';
 });
 
-router.get('/', async (ctx) => {
+router.get('/biotech', async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route
   const buttons = dynamicRoutes.map(r => {

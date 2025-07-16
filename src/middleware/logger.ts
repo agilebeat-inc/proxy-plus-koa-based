@@ -4,7 +4,7 @@ import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
 
 const ignore_prefixes = "['/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']";
-const prefixesToIgnoreInLogs = getEnvVar('PREFIX_IGNORE_URLS', ignore_prefixes) || ignore_prefixes;
+const prefixesToIgnoreInLogs = getEnvVar('IGNORE_URLS_FOR_LOGGING_BY_PREFIX', ignore_prefixes) || ignore_prefixes;
 
 // Parse the prefixes string into an array (e.g., "['_app','/health']" => ['_app','/health'])
 function parsePrefixes(prefixes: string): string[] {
