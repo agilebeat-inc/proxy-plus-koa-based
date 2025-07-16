@@ -9,11 +9,6 @@ import type { Context } from 'koa';
 
 const router = new Router();
 
-const defaultAppAUrl = 'http://10.82.1.228:3001';
-const defaultLinkAnalysisUrl = 'http://10.82.1.228:7474';
-const targetBase = getEnvVar('APP_A_URL', defaultAppAUrl);
-const linkAnalysisBase = getEnvVar('LINK_ANALYSIS_URL', defaultLinkAnalysisUrl);
-
 const DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/bioddex(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
 
 function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
@@ -59,10 +54,11 @@ dynamicRoutes.forEach(({ name, route, target }) => {
         ) {
           try {
             // Parse the original location
-            const locationUrl = new URL(headers.location as string, linkAnalysisBase);
-            // Rewrite the location to go through the proxy
+            const locationUrl = new URL(headers.location as string);
+            // Rewrite the location to go through the proxy using the route prefix
+            const routePrefix = prefixForRoute;
             headers.location =
-              '/linkanalysis' + locationUrl.pathname + (locationUrl.search || '');
+              routePrefix + locationUrl.pathname + (locationUrl.search || '');
           } catch {
             // If location is not a valid URL, leave as is
           }
@@ -101,7 +97,7 @@ dynamicRoutes.forEach(({ name, route, target }) => {
     ctx.body = 'Direct backend URL access is forbidden.';
   });
 
-router.get('/', async (ctx) => {
+router.get('/biotech', async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route
   const buttons = dynamicRoutes.map(r => {
@@ -144,4 +140,4 @@ router.get('/', async (ctx) => {
   `;
 });
 
-  export default router;
+export default router;
