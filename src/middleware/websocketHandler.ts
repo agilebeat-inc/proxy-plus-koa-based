@@ -1,9 +1,13 @@
+
 import WebSocket from 'ws';
 import type { Context } from 'koa';
+import { getEnvVar } from '../utils/envHelper';
 
 export function websocketHandler(ctx: any, targetUrl: string) {
+  // Use provided targetUrl or fallback to env/default
+  const wsTarget = targetUrl
   // Connect to the target WebSocket server
-  const target = new WebSocket(targetUrl);
+  const target = new WebSocket(wsTarget);
 
   // Forward messages from client to target
   ctx.websocket.on('message', (msg: any) => {

@@ -9,6 +9,7 @@ import { pepMiddleware } from './middleware/pep';
 import { contextMiddleware } from './middleware/context';
 import { loggerMiddleware } from './middleware/logger';
 import { userMiddleware } from './middleware/user';
+import { getEnvVar } from './utils/envHelper';
 
 const app = websockify(new Koa({ asyncLocalStorage: true }));
 
@@ -27,9 +28,11 @@ type AuthPayload = {
   credentials?: string;
 };
 
+const targetWs = getEnvVar('WS_TARGET_URL', 'ws://10.82.1.228:7687/');
+
 app.ws.use((ctx) => {
   // You can make the target URL configurable if needed
-  websocketHandler(ctx, 'ws://10.82.1.228:7687/');
+  websocketHandler(ctx, targetWs);
 });
 
 app.listen(3000, () => {

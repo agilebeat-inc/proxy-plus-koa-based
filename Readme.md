@@ -34,6 +34,8 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 
 - `IGNORE_URLS_FOR_LOGGING_BY_PREFIX`: Comma-separated list or JSON array of URL path prefixes to ignore in request logging. Useful for suppressing logs for health    checks, static assets, or other non-essential endpoints. Default: `['/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']`
 
+- `WS_TARGET_URL`: is an environment variable that specifies the default WebSocket backend URL to which the proxy will forward WebSocket connections. If not set, it defaults to `ws://10.82.1.228:7687/`. This allows you to easily change the WebSocket target without modifying the code. Set it in your environment to point to your desired WebSocket server.
+
 ## TODO
 
 - Websocket forwarding is implemented for only one websocket. Add multiple websocket.
