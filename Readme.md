@@ -29,11 +29,8 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 
 ## Environment Variables
 
-- `DYNAMIC_ROUTES_JSON`: JSON string defining dynamic proxy routes. Example:
-  '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://localhost:4000"}]'
-- `APP_A_URL`: (Optional) Default backend URL for /bioddex routes (legacy/static route support).
-- `LINK_ANALYSIS_URL`: (Optional) Default backend URL for /linkanalysis routes (legacy/static route support).
-- `TARGET_WS_URL` or `WS_URL_TARGET`: (Optional) WebSocket target URL for proxying WebSocket connections.
+- `DYNAMIC_ROUTES`: JSON string defining dynamic proxy routes. Example:
+  '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://<some webapp address>:3000"}]'
 
 ## License
 MIT

@@ -24,7 +24,7 @@ function getDynamicRoutes(drString: string): Array<{ name: string; route: string
 const dynamicRoutes = getDynamicRoutes(DYNAMIC_ROUTES);
 dynamicRoutes.forEach(({ name, route, target }) => {
   router.all(route, async (ctx) => {
-    const prefixForRoute = route.replace(/\(.*\)$/, ''); 
+    const prefixForRoute = route.replace(/\(.*\)$/, '');
     const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
     const targetUrl = `${target}${proxiedPath}${ctx.search || ''}`;
     console.log(targetUrl)
@@ -91,13 +91,13 @@ dynamicRoutes.forEach(({ name, route, target }) => {
 });
 
 
-  // Prevent direct access to proxied backend URLs (bypass fix)
-  router.all(/^\/(http|https):\/\//, async (ctx) => {
-    ctx.status = 403;
-    ctx.body = 'Direct backend URL access is forbidden.';
-  });
+// Prevent direct access to proxied backend URLs (bypass fix)
+router.all(/^\/(http|https):\/\//, async (ctx) => {
+  ctx.status = 403;
+  ctx.body = 'Direct backend URL access is forbidden.';
+});
 
-router.get('/biotech', async (ctx) => {
+router.get('/', async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route
   const buttons = dynamicRoutes.map(r => {
