@@ -14,121 +14,74 @@ const defaultLinkAnalysisUrl = 'http://10.82.1.228:7474';
 const targetBase = getEnvVar('APP_A_URL', defaultAppAUrl);
 const linkAnalysisBase = getEnvVar('LINK_ANALYSIS_URL', defaultLinkAnalysisUrl);
 
-router.all('/bioddex(.*)', async (ctx) => {
-  const proxiedPath = ctx.path.replace(/^\/bioddex/, '') || '/';
-  const targetUrl = `${targetBase}${proxiedPath}${ctx.search || ''}`;
+const DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/bioddex(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
 
-  const url = new URL(targetUrl);
-  const isHttps = url.protocol === 'https:';
-  const requestOptions: RequestOptions = {
-    protocol: url.protocol,
-    hostname: url.hostname,
-    port: url.port || (isHttps ? 443 : 80),
-    path: url.pathname + url.search,
-    method: ctx.method,
-    headers: { ...ctx.headers, host: url.hostname },
-  };
+function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
+  let dynamicRoutes: Array<{ name: string; route: string; target: string }> = [];
+  try {
+    dynamicRoutes = JSON.parse(drString || '[]');
+  } catch {
+    dynamicRoutes = [];
+  }
+  return dynamicRoutes;
+}
 
-  await new Promise<void>((resolve, reject) => {
-    const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
-      ctx.status = proxyRes.statusCode || 500;
-      Object.entries(proxyRes.headers).forEach(([key, value]) => {
-        if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
+const dynamicRoutes = getDynamicRoutes(DYNAMIC_ROUTES);
+dynamicRoutes.forEach(({ name, route, target }) => {
+  router.all(route, async (ctx) => {
+    const prefixForRoute = route.replace(/\(.*\)$/, ''); // "/analytics"
+    const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
+    const targetUrl = `${target}${proxiedPath}${ctx.search || ''}`;
+
+    const url = new URL(targetUrl);
+    const isHttps = url.protocol === 'https:';
+    const requestOptions: RequestOptions = {
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: ctx.method,
+      headers: { ...ctx.headers, host: url.hostname },
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
+        ctx.status = proxyRes.statusCode || 500;
+        Object.entries(proxyRes.headers).forEach(([key, value]) => {
+          if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
+        });
+        ctx.body = proxyRes;
+        resolve();
       });
-      ctx.body = proxyRes;
-      resolve();
-    });
 
-    proxyReq.on('error', (err) => {
-      ctx.status = 500;
-      ctx.body = { message: 'Proxy error', error: err.message };
-      reject(err);
-    });
+      proxyReq.on('error', (err) => {
+        ctx.status = 500;
+        ctx.body = { message: 'Proxy error', error: err.message };
+        reject(err);
+      });
 
-    if (ctx.req.readable) {
-      ctx.req.pipe(proxyReq);
-    } else if (ctx.request.body) {
-      proxyReq.write(typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body));
-      proxyReq.end();
-    } else {
-      proxyReq.end();
-    }
-  });
-});
-
-
-router.all('/linkanalysis(.*)', async (ctx) => {
-  const proxiedPath = ctx.path.replace(/^\/linkanalysis/, '') || '/';
-  const targetUrl = `${linkAnalysisBase}${proxiedPath}${ctx.search || ''}`;
-
-  const url = new URL(targetUrl);
-  const isHttps = url.protocol === 'https:';
-  const requestOptions: RequestOptions = {
-    protocol: url.protocol,
-    hostname: url.hostname,
-    port: url.port || (isHttps ? 443 : 80),
-    path: url.pathname + url.search,
-    method: ctx.method,
-    headers: { ...ctx.headers, host: url.hostname },
-  };
-
-  await new Promise<void>((resolve, reject) => {
-    const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
-      ctx.status = proxyRes.statusCode || 500;
-
-      // Handle and rewrite Location header for redirects (3xx)
-      const headers = { ...proxyRes.headers };
-      if (
-        proxyRes.statusCode &&
-        proxyRes.statusCode >= 300 &&
-        proxyRes.statusCode < 400 &&
-        headers.location
-      ) {
-        try {
-          // Parse the original location
-          const locationUrl = new URL(headers.location as string, linkAnalysisBase);
-          // Rewrite the location to go through the proxy
-          headers.location =
-            '/linkanalysis' + locationUrl.pathname + (locationUrl.search || '');
-        } catch {
-          // If location is not a valid URL, leave as is
-        }
+      if (ctx.req.readable) {
+        ctx.req.pipe(proxyReq);
+      } else if (ctx.request.body) {
+        proxyReq.write(typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body));
+        proxyReq.end();
+      } else {
+        proxyReq.end();
       }
-
-      Object.entries(headers).forEach(([key, value]) => {
-        if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
-      });
-
-      ctx.body = proxyRes;
-      resolve();
     });
-
-    proxyReq.on('error', (err) => {
-      ctx.status = 500;
-      ctx.body = { message: 'Proxy error', error: err.message };
-      reject(err);
-    });
-
-    if (ctx.req.readable) {
-      ctx.req.pipe(proxyReq);
-    } else if (ctx.request.body) {
-      proxyReq.write(typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body));
-      proxyReq.end();
-    } else {
-      proxyReq.end();
-    }
   });
 });
 
-// Prevent direct access to proxied backend URLs (bypass fix)
-router.all(/^\/(http|https):\/\//, async (ctx) => {
-  ctx.status = 403;
-  ctx.body = 'Direct backend URL access is forbidden.';
-});
 
-router.get('/', async (ctx) => {
-  ctx.type = 'html';
-  ctx.body = `
+  // Prevent direct access to proxied backend URLs (bypass fix)
+  router.all(/^\/(http|https):\/\//, async (ctx) => {
+    ctx.status = 403;
+    ctx.body = 'Direct backend URL access is forbidden.';
+  });
+
+  router.get('/', async (ctx) => {
+    ctx.type = 'html';
+    ctx.body = `
     <!DOCTYPE html>
     <html>
       <head>
@@ -161,6 +114,6 @@ router.get('/', async (ctx) => {
       </body>
     </html>
   `;
-});
+  });
 
-export default router;
+  export default router;
