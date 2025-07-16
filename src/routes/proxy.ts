@@ -4,7 +4,8 @@ import Router from 'koa-router';
 import http, { RequestOptions, IncomingMessage } from 'http';
 import https from 'https';
 import { URL } from 'url';
-import { Context } from 'koa';
+// Remove the import of Context from 'koa-websocket' if present
+import type { Context } from 'koa';
 
 const router = new Router();
 
@@ -13,8 +14,7 @@ const defaultLinkAnalysisUrl = 'http://10.82.1.228:7474';
 const targetBase = getEnvVar('APP_A_URL', defaultAppAUrl);
 const linkAnalysisBase = getEnvVar('LINK_ANALYSIS_URL', defaultLinkAnalysisUrl);
 
-// Proxy for /bioddex
-router.all('/bioddex(.*)', async (ctx: Context) => {
+router.all('/bioddex(.*)', async (ctx) => {
   const proxiedPath = ctx.path.replace(/^\/bioddex/, '') || '/';
   const targetUrl = `${targetBase}${proxiedPath}${ctx.search || ''}`;
 
@@ -57,8 +57,7 @@ router.all('/bioddex(.*)', async (ctx: Context) => {
 });
 
 
-// Proxy for /linkanalysis
-router.all('/linkanalysis(.*)', async (ctx: Context) => {
+router.all('/linkanalysis(.*)', async (ctx) => {
   const proxiedPath = ctx.path.replace(/^\/linkanalysis/, '') || '/';
   const targetUrl = `${linkAnalysisBase}${proxiedPath}${ctx.search || ''}`;
 
@@ -119,6 +118,49 @@ router.all('/linkanalysis(.*)', async (ctx: Context) => {
       proxyReq.end();
     }
   });
+});
+
+// Prevent direct access to proxied backend URLs (bypass fix)
+router.all(/^\/(http|https):\/\//, async (ctx) => {
+  ctx.status = 403;
+  ctx.body = 'Direct backend URL access is forbidden.';
+});
+
+router.get('/', async (ctx) => {
+  ctx.type = 'html';
+  ctx.body = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Service Selector</title>
+        <style>
+          body { font-family: sans-serif; margin: 2em; }
+          .container { max-width: 400px; margin: auto; }
+          h1 { text-align: center; }
+          a.button {
+            display: block;
+            margin: 1em 0;
+            padding: 1em;
+            background: #0078d4;
+            color: #fff;
+            text-decoration: none;
+            text-align: center;
+            border-radius: 5px;
+            font-size: 1.2em;
+            transition: background 0.2s;
+          }
+          a.button:hover { background: #005fa3; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>Select Service</h1>
+          <a class="button" href="/bioddex/">Go to Bioddex</a>
+          <a class="button" href="/linkanalysis/browser/?dbms=neo4j://localhost:3000/neo4j&db=neo4j&preselectAuthMethod=NONE">Go to Linkanalysis</a>
+        </div>
+      </body>
+    </html>
+  `;
 });
 
 export default router;
