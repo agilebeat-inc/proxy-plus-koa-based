@@ -30,7 +30,14 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 ## Environment Variables
 
 - `DYNAMIC_ROUTES`: JSON string defining dynamic proxy routes. Example:
-  '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://<some webapp address>:3000"}]'
+  `[{"name": "analytics", "route": "/analytics(.*)", "target": "http://<some webapp address>:3000"}]`
+
+- `IGNORE_URLS_FOR_LOGGING_BY_PREFIX`: Comma-separated list or JSON array of URL path prefixes to ignore in request logging. Useful for suppressing logs for health    checks, static assets, or other non-essential endpoints. Default: `['/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']`
+
+## TODO
+
+- Websocket forwarding is implemented for only one websocket. Add multiple websocket.
 
 ## License
 MIT
+
