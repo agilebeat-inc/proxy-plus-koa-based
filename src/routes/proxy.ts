@@ -65,15 +65,16 @@ dynamicRoutes.forEach(({ name, route, target }) => {
           proxyRes.statusCode < 400 &&
           headers.location
         ) {
+          const originalLocation = headers.location as string;
+          let rewrittenLocation: string = "";
           try {
-            // Parse the original location
-            const locationUrl = new URL(headers.location as string);
+            const locationUrl = new URL(originalLocation);
             // Rewrite the location to go through the proxy using the route prefix
             const routePrefix = prefixForRoute;
-            headers.location =
-              routePrefix + locationUrl.pathname + (locationUrl.search || '');
+            rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
+            headers.location = rewrittenLocation;
           } catch {
-            // If location is not a valid URL, leave as is
+            logger.info(`Rewriting Location header for redirect: original='${originalLocation}' rewritten='${rewrittenLocation}'`);
           }
         }
 
