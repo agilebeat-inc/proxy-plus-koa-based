@@ -29,9 +29,10 @@ function getDynamicRoutes(drString: string): Array<{ name: string; route: string
 const dynamicRoutes = getDynamicRoutes(DYNAMIC_ROUTES);
 dynamicRoutes.forEach(({ name, route, target }) => {
   router.all(route, async (ctx) => {
-    const prefixForRoute = route.replace(/\(.*\)$/, ''); // "/analytics"
+    const prefixForRoute = route.replace(/\(.*\)$/, ''); 
     const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
     const targetUrl = `${target}${proxiedPath}${ctx.search || ''}`;
+    console.log(targetUrl)
 
     const url = new URL(targetUrl);
     const isHttps = url.protocol === 'https:';
@@ -47,9 +48,30 @@ dynamicRoutes.forEach(({ name, route, target }) => {
     await new Promise<void>((resolve, reject) => {
       const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
         ctx.status = proxyRes.statusCode || 500;
-        Object.entries(proxyRes.headers).forEach(([key, value]) => {
+
+        // Handle and rewrite Location header for redirects (3xx)
+        const headers = { ...proxyRes.headers };
+        if (
+          proxyRes.statusCode &&
+          proxyRes.statusCode >= 300 &&
+          proxyRes.statusCode < 400 &&
+          headers.location
+        ) {
+          try {
+            // Parse the original location
+            const locationUrl = new URL(headers.location as string, linkAnalysisBase);
+            // Rewrite the location to go through the proxy
+            headers.location =
+              '/linkanalysis' + locationUrl.pathname + (locationUrl.search || '');
+          } catch {
+            // If location is not a valid URL, leave as is
+          }
+        }
+
+        Object.entries(headers).forEach(([key, value]) => {
           if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
         });
+
         ctx.body = proxyRes;
         resolve();
       });
@@ -79,9 +101,16 @@ dynamicRoutes.forEach(({ name, route, target }) => {
     ctx.body = 'Direct backend URL access is forbidden.';
   });
 
-  router.get('/', async (ctx) => {
-    ctx.type = 'html';
-    ctx.body = `
+router.get('/', async (ctx) => {
+  ctx.type = 'html';
+  // Generate a button for each dynamic route
+  const buttons = dynamicRoutes.map(r => {
+    // Remove (.*) from route for button href
+    const href = r.route.replace(/\(\.\*\)$/, '');
+    const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
+    return `<a class="button" href="${href}/">Go to ${label}</a>`;
+  }).join('\n');
+  ctx.body = `
     <!DOCTYPE html>
     <html>
       <head>
@@ -108,12 +137,11 @@ dynamicRoutes.forEach(({ name, route, target }) => {
       <body>
         <div class="container">
           <h1>Select Service</h1>
-          <a class="button" href="/bioddex/">Go to Bioddex</a>
-          <a class="button" href="/linkanalysis/browser/?dbms=neo4j://localhost:3000/neo4j&db=neo4j&preselectAuthMethod=NONE">Go to Linkanalysis</a>
+          ${buttons}
         </div>
       </body>
     </html>
   `;
-  });
+});
 
   export default router;
