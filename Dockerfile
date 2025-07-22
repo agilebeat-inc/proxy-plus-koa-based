@@ -10,7 +10,7 @@ WORKDIR /app
 # Clone the GitHub repository
 COPY . .
 
-RUN yarn install && yarn build
+RUN yarn install && yarn build:all
 
 # -------- Stage 2: Serve with Koa --------
 FROM node:24-slim
