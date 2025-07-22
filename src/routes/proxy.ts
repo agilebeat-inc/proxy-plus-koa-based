@@ -40,7 +40,6 @@ dynamicRoutes.forEach(({ name, route, target }) => {
     const prefixForRoute = route.replace(/\(.*\)$/, '');
     const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
     const targetUrl = `${target}${proxiedPath}${ctx.search || ''}`;
-    console.log(targetUrl)
 
     const url = new URL(targetUrl);
     const isHttps = url.protocol === 'https:';

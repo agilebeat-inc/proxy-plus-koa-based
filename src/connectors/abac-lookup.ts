@@ -16,7 +16,6 @@ async function runPluginForUserLookup(cn: string) {
 
 async function lookupUserByCN(cn: string) {
   // Example: Replace with real HTTP/LDAP/DB call
-  console.log(`Looking up user by CN: ${cn}`);
   if (cn === 'anonymous') {
     return await runPluginForUserLookup(cn);
   }
