@@ -4,7 +4,31 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
+        {
+            "name": "Attach",
+            "port": 9229,
+            "request": "attach",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Koa (uncompiled)",
+            "program": "${workspaceFolder}/src/app.ts",
+            "cwd": "${workspaceFolder}",
+            "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+            "sourceMaps": true
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}"
+        },       
         {
             "type": "msedge",
             "request": "launch",

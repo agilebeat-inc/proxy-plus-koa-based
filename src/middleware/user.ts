@@ -4,7 +4,7 @@ import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
 
 // Import the JS connector
-const { lookupUserByCN } = require('../connectors/dummy-user');
+const { lookupUserByCN } = require('../connectors/abac-lookup');
 
 const cnUserHeader = 'x-user-common-name';
 const userHeaderForCN = getEnvVar('USER_HEADER_FOR_CN', cnUserHeader) || cnUserHeader;
@@ -21,30 +21,37 @@ export const userMiddleware: Middleware = async (ctx, next) => {
     : commonNameHeader || 'anonymous';
 
   // If user is not set but we have a common name, try to look up user info externally
-  if (!user && commonName && commonName !== 'anonymous') {
-    try {
-      user = await lookupUserByCN(commonName);
-    } catch (err) {
-      logger.warn(`[User Middleware] External user lookup failed for CN=${commonName}:`, err);
+  if (!user) {
+    if (commonName) {
+      try {
+        user = await lookupUserByCN(commonName);
+        if (user) {
+          logger.info(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
+        } else {
+          logger.warn(`No user found for common name ${commonName}`);
+        }
+      } catch (error) {
+        logger.error(`Error looking up user by common name ${commonName}:`, error);
+      }
     }
   }
 
   const context: RequestContext = {
-      user: user
-          ? {
-              id: user.id,
-              name: user.name,
-              role: user.role,
-              cn: commonName,
-          }
-          : commonName
-              ? {
-                  id: undefined,
-                  name: undefined,
-                  role: undefined,
-                  cn: commonName,
-              }
-              : undefined,
+    user: user
+      ? {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        cn: commonName,
+      }
+      : commonName
+        ? {
+          id: undefined,
+          name: undefined,
+          role: undefined,
+          cn: commonName,
+        }
+        : undefined,
     reqId: store?.reqId || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     method: store?.method || ctx.method,
     path: store?.path || ctx.path,

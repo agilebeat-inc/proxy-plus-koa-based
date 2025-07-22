@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
+    "build:plugins": "tsc src/plugins/*.ts --outDir dist/plugins",
+    "build:all": "npm run build && npm run build:plugins",
     "start": "node dist/app.js",
     "dev": "nodemon --watch src --exec ts-node src/app.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

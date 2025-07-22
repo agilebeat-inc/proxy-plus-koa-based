@@ -3,7 +3,7 @@ import { asyncLocalStorage } from '../localStorage';
 import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
 
-const ignore_prefixes = "['/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']";
+const ignore_prefixes = "['/app', '/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']";
 const prefixesToIgnoreInLogs = getEnvVar('IGNORE_URLS_FOR_LOGGING_BY_PREFIX', ignore_prefixes) || ignore_prefixes;
 
 // Parse the prefixes string into an array (e.g., "['_app','/health']" => ['_app','/health'])
