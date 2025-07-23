@@ -10,5 +10,6 @@ export function getEnvVar(envVarName: string, defaultVal: string): string {
         logger.warn(`[ENV Settings] ${envVarName} not set, using default value instead: ${defaultVal}`);
         return defaultVal;
     }
+    logger.info(`[ENV Settings] ${envVarName} is set to: ${value}`);
     return value;
 }
