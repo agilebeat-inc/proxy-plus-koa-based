@@ -7,9 +7,9 @@ import logger from './logger';
 export function getEnvVar(envVarName: string, defaultVal: string): string {
     const value = process.env[envVarName];
     if (!value) {
-        logger.warn(`[ENV Settings] ${envVarName} not set, using default value instead: ${defaultVal}`);
+        logger.warn(`[Environment] ${envVarName} not set, using default value instead: ${defaultVal}`);
         return defaultVal;
     }
-    logger.info(`[ENV Settings] ${envVarName} is set to: ${value}`);
+    logger.info(`[Environment] ${envVarName} is set to: ${value}`);
     return value;
 }
