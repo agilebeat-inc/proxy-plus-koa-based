@@ -26,7 +26,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
       try {
         user = await lookupUserByCN(commonName);
         if (user) {
-          logger.info(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
+          logger.debug(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
         } else {
           logger.warn(`No user found for common name ${commonName}`);
         }
