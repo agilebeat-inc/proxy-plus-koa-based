@@ -1,0 +1,18 @@
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8443:443"
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./dev-certs:/etc/nginx/certs:ro
+
+  haproxy:
+    image: haproxy:alpine
+    ports:
+      - "8880:80"
+      - "8843:443"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./dev-certs:/etc/haproxy/certs:ro

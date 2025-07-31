@@ -1,7 +1,6 @@
 
 import WebSocket from 'ws';
-import type { Context } from 'koa';
-import { getEnvVar } from '../utils/envHelper';
+import logger from '../utils/logger';
 
 export function websocketHandler(ctx: any, targetUrl: string) {
   // Use provided targetUrl or fallback to env/default
@@ -11,6 +10,7 @@ export function websocketHandler(ctx: any, targetUrl: string) {
 
   // Forward messages from client to target
   ctx.websocket.on('message', (msg: any) => {
+    console.log(`******** message: ${msg}`);
     if (target.readyState === WebSocket.OPEN) {
       target.send(msg);
     } else {
@@ -20,6 +20,7 @@ export function websocketHandler(ctx: any, targetUrl: string) {
 
   // Forward messages from target to client
   target.on('message', (msg: any) => {
+    // Check if the WebSocket connection is open before sending
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.send(msg);
     }
@@ -27,22 +28,28 @@ export function websocketHandler(ctx: any, targetUrl: string) {
 
   // Handle open events
   ctx.websocket.on('open', () => {
-    // Optionally log or handle open event
+    console.log(`******** WebSocket connection established: ${ctx.websocket}`);
   });
 
   // Handle close events
   ctx.websocket.on('close', () => {
+    console.log(`******** WebSocket connection closed: ${ctx.websocket}`);
     target.close();
   });
+ 
   target.on('close', () => {
+    console.log(`******** WebSocket target close: ${target}`);
     ctx.websocket.close();
   });
 
   // Handle errors
   ctx.websocket.on('error', (err: any) => {
+    logger.error(`******** WebSocket error: ${err}`);
     target.terminate();
   });
+
   target.on('error', (err: any) => {
+    logger.error(`******** WebSocket target error: ${err}`);
     ctx.websocket.terminate();
   });
 }
