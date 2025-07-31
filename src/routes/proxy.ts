@@ -10,7 +10,8 @@ import logger from '../utils/logger';
 
 const router = new Router();
 
-const DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
+const DEFAULT_DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
+const DYNAMIC_ROUTES = getEnvVar('DYNAMIC_ROUTES', DEFAULT_DYNAMIC_ROUTES);
 
 function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
   let dynamicRoutes: Array<{ name: string; route: string; target: string }> = [];
@@ -109,7 +110,10 @@ router.all(/^\/(http|https):\/\//, async (ctx) => {
   ctx.body = 'Direct backend URL access is forbidden.';
 });
 
-router.get('/biotech', async (ctx) => {
+
+const dynamicRoutesInventoryPrefix = getEnvVar('DYNAMIC_ROUTES_INVENTORY_PREFIX', '/inventory');
+
+router.get(dynamicRoutesInventoryPrefix, async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route
   const buttons = dynamicRoutes.map(r => {
