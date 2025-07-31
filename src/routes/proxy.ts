@@ -10,7 +10,7 @@ import logger from '../utils/logger';
 
 const router = new Router();
 
-const DEFAULT_DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/linkanalysis(.*)", "target": "http://10.82.1.228:7474"}]'
+const DEFAULT_DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics/browser(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/analytics/graph(.*)", "target": "http://10.82.1.228:7474"}]'
 const DYNAMIC_ROUTES = getEnvVar('DYNAMIC_ROUTES', DEFAULT_DYNAMIC_ROUTES);
 
 function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
@@ -111,9 +111,9 @@ router.all(/^\/(http|https):\/\//, async (ctx) => {
 });
 
 
-const dynamicRoutesInventoryPrefix = getEnvVar('DYNAMIC_ROUTES_INVENTORY_PREFIX', '/inventory');
+const dynamicRoutesServicesPrefix = getEnvVar('DYNAMIC_ROUTES_INVENTORY_PREFIX', '/services');
 
-router.get(dynamicRoutesInventoryPrefix, async (ctx) => {
+router.get(dynamicRoutesServicesPrefix, async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route
   const buttons = dynamicRoutes.map(r => {
@@ -154,6 +154,14 @@ router.get(dynamicRoutesInventoryPrefix, async (ctx) => {
       </body>
     </html>
   `;
+});
+
+// Catch-all route: redirect to inventory if no other route matched
+router.all('(.*)', async (ctx) => {
+  // Only redirect if not already at the services prefix
+  if (ctx.path !== dynamicRoutesServicesPrefix) {
+    ctx.redirect(dynamicRoutesServicesPrefix);
+  }
 });
 
 export default router;
