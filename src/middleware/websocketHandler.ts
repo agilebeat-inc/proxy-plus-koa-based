@@ -1,16 +1,15 @@
-
 import WebSocket from 'ws';
 import logger from '../utils/logger';
 
 export function websocketHandler(ctx: any, targetUrl: string) {
   // Use provided targetUrl or fallback to env/default
-  const wsTarget = targetUrl
+  const wsTarget = targetUrl;
   // Connect to the target WebSocket server
   const target = new WebSocket(wsTarget);
 
   // Forward messages from client to target
   ctx.websocket.on('message', (msg: any) => {
-    console.log(`******** message: ${msg}`);
+    logger.debug(`[client socket][message]: ${msg}`);
     if (target.readyState === WebSocket.OPEN) {
       target.send(msg);
     } else {
@@ -20,7 +19,6 @@ export function websocketHandler(ctx: any, targetUrl: string) {
 
   // Forward messages from target to client
   target.on('message', (msg: any) => {
-    // Check if the WebSocket connection is open before sending
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.send(msg);
     }
@@ -28,28 +26,32 @@ export function websocketHandler(ctx: any, targetUrl: string) {
 
   // Handle open events
   ctx.websocket.on('open', () => {
-    console.log(`******** WebSocket connection established: ${ctx.websocket}`);
+    logger.debug(`[client socket][On Open]: ${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`);
+  });
+
+  target.on('open', () => {
+    logger.debug(`[target socket][On Open]: ${typeof target === 'object' ? JSON.stringify(target) : target}`);
   });
 
   // Handle close events
   ctx.websocket.on('close', () => {
-    console.log(`******** WebSocket connection closed: ${ctx.websocket}`);
+    logger.debug(`[client socket][On Close]: ${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`);
     target.close();
   });
- 
+
   target.on('close', () => {
-    console.log(`******** WebSocket target close: ${target}`);
+    logger.debug(`[target socket][On Close]: ${typeof target === 'object' ? JSON.stringify(target) : target}`);
     ctx.websocket.close();
   });
 
   // Handle errors
   ctx.websocket.on('error', (err: any) => {
-    logger.error(`******** WebSocket error: ${err}`);
+    logger.error(`[client socket][On Error]: ${typeof err === 'object' ? JSON.stringify(err) : err}`);
     target.terminate();
   });
 
   target.on('error', (err: any) => {
-    logger.error(`******** WebSocket target error: ${err}`);
+    logger.error(`[target socket][On Error]: ${typeof err === 'object' ? JSON.stringify(err) : err}`);
     ctx.websocket.terminate();
   });
 }
