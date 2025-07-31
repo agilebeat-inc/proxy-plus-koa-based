@@ -28,7 +28,7 @@ type AuthPayload = {
   credentials?: string;
 };
 
-const targetWs = getEnvVar('WS_TARGET_URL', 'ws://neo4j.com:7687/');
+const targetWs = getEnvVar('WS_TARGET_URL', 'ws://10.82.1.228:7687/');
 
 app.ws.use((ctx) => {
   // You can make the target URL configurable if needed
