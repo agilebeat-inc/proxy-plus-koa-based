@@ -40,6 +40,8 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
     ? `User: ${store.user.cn} (${store.user.id})`
     : 'User: anonymous (null)';
 
+  const queryParams = ctx.querystring ? ctx.querystring : null;
+
   const start = Date.now();
   const logStart = {
     timestamp: store?.timestamp,
@@ -49,6 +51,7 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
     event: 'START',
     user: store?.user || { cn: 'anonymous', id: null },
     userTag,
+    queryParams, 
   };
   logger.info(logStart);
 
