@@ -36,6 +36,8 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 
 - `WS_TARGET_URL`: is an environment variable that specifies the default WebSocket backend URL to which the proxy will forward WebSocket connections. If not set, it defaults to `ws://10.82.1.228:7687/`. This allows you to easily change the WebSocket target without modifying the code. Set it in your environment to point to your desired WebSocket server.
 
+- `LOG_LEVEL=debug`: Turn on debug statements in your app
+
 ## TODO
 
 - Websocket forwarding is implemented for only one websocket. Add multiple websocket.
