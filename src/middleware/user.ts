@@ -31,7 +31,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
           logger.warn(`No user found for common name ${commonName}`);
         }
       } catch (error) {
-        logger.error(`Error looking up user by common name ${commonName}:`, error);
+        logger.error(`Error looking up user by common name ${commonName}: ${error instanceof Error ? error.stack || error.message : JSON.stringify(error)}`);
       }
     }
   }

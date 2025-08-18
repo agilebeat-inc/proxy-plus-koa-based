@@ -4,13 +4,14 @@ import Router from 'koa-router';
 import http, { RequestOptions, IncomingMessage } from 'http';
 import https from 'https';
 import { URL } from 'url';
+import cheerio from 'cheerio';
 // Remove the import of Context from 'koa-websocket' if present
 import type { Context } from 'koa';
 import logger from '../utils/logger';
 
 const router = new Router();
 
-const DEFAULT_DYNAMIC_ROUTES = '[{"name": "analytics", "route": "/analytics/browser(.*)", "target": "http://10.82.1.228:3001"}, {"name": "linkanalysis", "route": "/analytics/graph(.*)", "target": "http://10.82.1.228:7474"}]'
+const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Data Browser", "route": "/analytics/(.*)", "target": "http://10.182.1.86:3001"}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474"}]'
 const DYNAMIC_ROUTES = getEnvVar('DYNAMIC_ROUTES', DEFAULT_DYNAMIC_ROUTES);
 
 function getDynamicRoutes(drString: string): Array<{ name: string; route: string; target: string }> {
@@ -25,23 +26,17 @@ function getDynamicRoutes(drString: string): Array<{ name: string; route: string
 
 const dynamicRoutes = getDynamicRoutes(DYNAMIC_ROUTES);
 
-// Add default route to redirect to the first dynamic route if not already present
-if (dynamicRoutes.length > 0) {
-  const { route } = dynamicRoutes[0];
-  // Only add if the first route is not already '/'
-  if (route !== '/') {
-    const redirectPath = route.replace(/\(\.\*\)$/, '');
-    router.get('/', async (ctx) => {
-      ctx.redirect(`${redirectPath}/`);
-    });
-  }
+if (dynamicRoutes.length === 0) {
+  logger.warn('No dynamic routes configured. Please set the DYNAMIC_ROUTES environment variable.');
 }
+
 dynamicRoutes.forEach(({ name, route, target }) => {
   router.all(route, async (ctx) => {
     const prefixForRoute = route.replace(/\(.*\)$/, '');
     const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
-    const targetUrl = `${target}${proxiedPath}${ctx.search || ''}`;
-
+    const normalizedTarget = target.replace(/\/$/, '');
+    const normalizedProxiedPath = proxiedPath.startsWith('/') ? proxiedPath : '/' + proxiedPath;
+    const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
     const url = new URL(targetUrl);
     const isHttps = url.protocol === 'https:';
     const requestOptions: RequestOptions = {
@@ -69,7 +64,6 @@ dynamicRoutes.forEach(({ name, route, target }) => {
           let rewrittenLocation: string = "";
           try {
             const locationUrl = new URL(originalLocation);
-            // Rewrite the location to go through the proxy using the route prefix
             const routePrefix = prefixForRoute;
             rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
             headers.location = rewrittenLocation;
@@ -78,12 +72,37 @@ dynamicRoutes.forEach(({ name, route, target }) => {
           }
         }
 
-        Object.entries(headers).forEach(([key, value]) => {
-          if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
-        });
+        // Intercept HTML responses and inject <base href="...">
+        let bodyChunks: Buffer[] = [];
+        const contentType = proxyRes.headers['content-type'] || '';
+        const shouldRewriteHtml = contentType.includes('text/html');
 
-        ctx.body = proxyRes;
-        resolve();
+        if (shouldRewriteHtml) {
+          proxyRes.on('data', (chunk) => bodyChunks.push(chunk));
+          proxyRes.on('end', () => {
+            let body = Buffer.concat(bodyChunks).toString('utf8');
+            // Remove any existing <base ...> tag
+            body = body.replace(/<base[^>]*>/gi, '');
+            // Inject <base href="..."> right after <head>
+            body = body.replace(
+              /<head([^>]*)>/i,
+              `<head$1><base href="${prefixForRoute}/">`
+            );
+            ctx.set('content-type', contentType);
+            Object.entries(headers).forEach(([key, value]) => {
+              if (key.toLowerCase() !== 'content-length' && value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
+            });
+            ctx.body = body;
+            resolve();
+          });
+          proxyRes.on('error', reject);
+        } else {
+          Object.entries(headers).forEach(([key, value]) => {
+            if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
+          });
+          ctx.body = proxyRes;
+          resolve();
+        }
       });
 
       proxyReq.on('error', (err) => {
@@ -104,13 +123,6 @@ dynamicRoutes.forEach(({ name, route, target }) => {
   });
 });
 
-// Prevent direct access to proxied backend URLs (bypass fix)
-router.all(/^\/(http|https):\/\//, async (ctx) => {
-  ctx.status = 403;
-  ctx.body = 'Direct backend URL access is forbidden.';
-});
-
-
 const dynamicRoutesServicesPrefix = getEnvVar('DYNAMIC_ROUTES_INVENTORY_PREFIX', '/services');
 
 router.get(dynamicRoutesServicesPrefix, async (ctx) => {
@@ -120,7 +132,7 @@ router.get(dynamicRoutesServicesPrefix, async (ctx) => {
     // Remove (.*) from route for button href
     const href = r.route.replace(/\(\.\*\)$/, '');
     const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
-    return `<a class="button" href="${href}/">Go to ${label}</a>`;
+    return `<a class="button" href="${href}">${label}</a>`;
   }).join('\n');
   ctx.body = `
     <!DOCTYPE html>
@@ -156,11 +168,35 @@ router.get(dynamicRoutesServicesPrefix, async (ctx) => {
   `;
 });
 
+// Add default route to redirect to the first dynamic route if not already present
+if (dynamicRoutes.length > 0) {
+  const { route } = dynamicRoutes[0];
+  // Only add if the first route is not already '/'
+  if (route !== '/') {
+    const redirectPath = route.replace(/\(\.\*\)$/, '');
+    router.get('/', async (ctx) => {
+      ctx.redirect(`${redirectPath}`);
+    });
+  }
+}
+
+// Special case (patch for the webapp): if path is /search, redirect to /analytics/search (preserve query string)
+router.all('/search', async (ctx, next) => {
+  ctx.redirect(`/analytics/search${ctx.search || ''}`);
+});
+
 // Catch-all route: redirect to inventory if no other route matched
 router.all('(.*)', async (ctx) => {
   // Only redirect if not already at the services prefix
+
   if (ctx.path !== dynamicRoutesServicesPrefix) {
     ctx.redirect(dynamicRoutesServicesPrefix);
+  }
+});
+
+router.stack.forEach((route) => {
+  if (route.path) {
+    logger.debug(`[Registered Route][Methods: ${route.methods.join(', ')}] [Path: ${route.path}]`);
   }
 });
 
