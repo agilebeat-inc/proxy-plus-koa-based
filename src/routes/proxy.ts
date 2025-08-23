@@ -11,7 +11,7 @@ import logger from '../utils/logger';
 
 const router = new Router();
 
-const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "browser/?dbms=neo4j://Anonymous@localhost:3000&db=neo4j"}]';
+const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j"}]';
 // Static HTML for the dynamic routes services page, configurable via env var
 const DEFAULT_SERVICES_HTML = `
 <!DOCTYPE html>
@@ -352,7 +352,7 @@ router.get(dynamicRoutesServicesPrefix, async (ctx) => {
     const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
     let fullHref = href;
     if (r.params) {
-      fullHref += r.params.startsWith('?') ? r.params : `?${r.params}`;
+      fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
     }
     return `<a class="button" href="${fullHref}">${label}</a>`;
   }).join('\n');
