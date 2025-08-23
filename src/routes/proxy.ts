@@ -12,7 +12,84 @@ import logger from '../utils/logger';
 const router = new Router();
 
 const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "browser/?dbms=neo4j://Anonymous@localhost:3000&db=neo4j"}]';
-const UPSTREAM_ERROR_MSG = `
+// Static HTML for the dynamic routes services page, configurable via env var
+const DEFAULT_SERVICES_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Service Selector</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        background: #f3f4f6;
+        color: #1c1917;
+      }
+      .container {
+        max-width: 28rem;
+        margin: 8vh auto 0 auto;
+        background: #fff;
+        border-radius: 1rem;
+        box-shadow: 0 2px 12px #0002;
+        padding: 2.5em 2em 2em 2em;
+        text-align: center;
+        border: 1px solid #e5e7eb;
+      }
+      h1 {
+        color: #2563eb; /* BioDDEx blue-600 */
+        font-size: 2.25rem; /* text-4xl */
+        font-weight: 700;   /* font-bold */
+        margin-bottom: 1.5em;
+        letter-spacing: -0.01em;
+        font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+      }
+      .button {
+        display: block;
+        margin: 1.2em 0;
+        padding: 0.75em 0.5em;
+        background: #f9fafb;
+        color: #1c1917;
+        border-radius: 0.25rem;
+        border: 1px dotted #94a3b8; /* slate-400 */
+        font-size: 1.1em;
+        font-family: inherit;
+        font-weight: 500;
+        box-shadow: 0 1px 3px 0 rgb(0 0 0 / .08), 0 1px 2px -1px rgb(0 0 0 / .08);
+        text-decoration: none;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+        user-select: none;
+      }
+      .button:hover {
+        background: #e5e7eb;
+        border-color: #0f172a;
+        border-style: solid;
+        color: #2563eb;
+      }
+      @media (max-width: 600px) {
+        .container {
+          margin: 2vh 1vw 0 1vw;
+          padding: 1.5em 0.5em 1.5em 0.5em;
+        }
+        h1 {
+          font-size: 1.3rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Select Service</h1>
+      <!--SERVICES_BUTTONS-->
+    </div>
+  </body>
+</html>
+`;
+const DEFAULT_UPSTREAM_ERROR_MSG = `
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -109,84 +186,7 @@ const UPSTREAM_ERROR_MSG = `
 </html>
 `;
 const DYNAMIC_ROUTES = getEnvVar('DYNAMIC_ROUTES', DEFAULT_DYNAMIC_ROUTES);
-
-// Static HTML for the dynamic routes services page, configurable via env var
-const DEFAULT_SERVICES_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <title>Service Selector</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>
-      html, body {
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-        background: #f3f4f6;
-        color: #1c1917;
-      }
-      .container {
-        max-width: 28rem;
-        margin: 8vh auto 0 auto;
-        background: #fff;
-        border-radius: 1rem;
-        box-shadow: 0 2px 12px #0002;
-        padding: 2.5em 2em 2em 2em;
-        text-align: center;
-        border: 1px solid #e5e7eb;
-      }
-      h1 {
-        color: #2563eb; /* BioDDEx blue-600 */
-        font-size: 2.25rem; /* text-4xl */
-        font-weight: 700;   /* font-bold */
-        margin-bottom: 1.5em;
-        letter-spacing: -0.01em;
-        font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-      }
-      .button {
-        display: block;
-        margin: 1.2em 0;
-        padding: 0.75em 0.5em;
-        background: #f9fafb;
-        color: #1c1917;
-        border-radius: 0.25rem;
-        border: 1px dotted #94a3b8; /* slate-400 */
-        font-size: 1.1em;
-        font-family: inherit;
-        font-weight: 500;
-        box-shadow: 0 1px 3px 0 rgb(0 0 0 / .08), 0 1px 2px -1px rgb(0 0 0 / .08);
-        text-decoration: none;
-        cursor: pointer;
-        transition: border-color 0.2s, background 0.2s;
-        user-select: none;
-      }
-      .button:hover {
-        background: #e5e7eb;
-        border-color: #0f172a;
-        border-style: solid;
-        color: #2563eb;
-      }
-      @media (max-width: 600px) {
-        .container {
-          margin: 2vh 1vw 0 1vw;
-          padding: 1.5em 0.5em 1.5em 0.5em;
-        }
-        h1 {
-          font-size: 1.3rem;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Select Service</h1>
-      <!--SERVICES_BUTTONS-->
-    </div>
-  </body>
-</html>
-`;
+const UPSTREAM_ERROR_MSG = getEnvVar('UPSTREAM_ERROR_MSG', DEFAULT_UPSTREAM_ERROR_MSG);
 
 // Allow override via environment variable
 const SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_SERVICES_HTML);
