@@ -1,7 +1,7 @@
 import { loadPolicy } from './policy-loader';
 import { getEnvVar } from '../utils/envHelper';
 
-const policyName = getEnvVar('PEP-POLICY-NAME', 'simple-role-admin');
+const policyName = getEnvVar('PEP-POLICY-NAME', 'mock-always-deny');
 
 function getPolicyName() {
   return policyName;
