@@ -7,7 +7,6 @@ import { websocketHandler } from './middleware/websocketHandler';
 import proxyRouter from './routes/proxy';
 import { policyRendererMiddleware } from './middleware/policyRenderer';
 import { pepMiddleware } from './middleware/pep';
-import { contextMiddleware } from './middleware/context';
 import { loggerMiddleware } from './middleware/logger';
 import { userMiddleware } from './middleware/user';
 import { getEnvVar } from './utils/envHelper';
@@ -16,7 +15,6 @@ const app = websockify(new Koa({ asyncLocalStorage: true }));
 
 // Order do matters
 app.use(userMiddleware);
-app.use(contextMiddleware);
 app.use(policyRendererMiddleware);
 app.use(loggerMiddleware);  //logger captures statements
 app.use(pepMiddleware);     //pep denies or accepts based on state in localStorage

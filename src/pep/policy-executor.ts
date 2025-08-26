@@ -7,15 +7,15 @@ function getPolicyName() {
   return policyName;
 }
 
-async function runPluginForUserLookup(authAttributes: string) {
+async function runPluginForUserLookup(authAttributes: string, protectedResource?: string) {
   const policyExecutor = await loadPolicy(policyName);
   if (policyExecutor) {
-    return await policyExecutor.executePolicy(authAttributes);
+    return await policyExecutor.executePolicy(authAttributes, protectedResource);
   }
 }
 
-async function runPolicy(authAttributes: string) {
-    return await runPluginForUserLookup(authAttributes);
+async function runPolicy(authAttributes: string, protectedResource?: string) {
+    return await runPluginForUserLookup(authAttributes, protectedResource);
 }
 
 export { runPolicy, getPolicyName };

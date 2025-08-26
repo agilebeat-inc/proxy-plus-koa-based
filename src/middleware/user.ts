@@ -4,7 +4,7 @@ import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
 
 // Import the JS connector
-const { lookupUserByCN } = require('../connectors/abac-lookup');
+const { lookupUserByCN } = require('../connectors/userLookup');
 
 const cnUserHeader = 'x-user-common-name';
 const userHeaderForCN = getEnvVar('USER_HEADER_FOR_CN', cnUserHeader) || cnUserHeader;
