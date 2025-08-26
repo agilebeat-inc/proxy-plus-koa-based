@@ -64,11 +64,12 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
       status: ctx.status,
       event: 'END',
       durationMs: duration,
-    };
+      policyDecision: store?.policyDecision,
+    } 
     logger.info(logEnd);
   } catch (err) {
     const duration = Date.now() - start;
-    const logError = {
+    const logError: any = {
       timestamp: new Date().toISOString(),
       reqId: store?.reqId,
       event: 'ERROR',

@@ -18,6 +18,8 @@ export const contextMiddleware: Middleware = async (ctx, next) => {
           cn: store?.user?.cn || user?.cn,
         }
       : undefined,
+    policyName: store?.policyName || 'mock-always-deny',
+    isAllowed: store?.isAllowed || false,
   };
 
   return asyncLocalStorage.run(context, async () => {

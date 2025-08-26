@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
-    "build:plugins": "tsc src/plugins/*.ts --outDir dist/plugins",
-    "build:all": "npm run build && npm run build:plugins",
+    "build": "npm run build:all",
+    "build:plugins": "tsc src/connectors/plugins/*.ts --outDir dist/connectors/plugins",
+    "build:policies": "tsc src/pep/policies/*.ts --outDir dist/pep/policies",
+    "build:all": "tsc && npm run build:plugins && npm run build:policies",
     "start": "node dist/app.js",
     "dev": "nodemon --watch src --exec ts-node src/app.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -337,7 +337,6 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
       ctx.status = 502;
       ctx.type = 'html';
       ctx.body = UPSTREAM_ERROR_MSG;
-      
     }
   });
 });

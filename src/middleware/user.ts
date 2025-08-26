@@ -43,6 +43,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
         name: user.name,
         role: user.role,
         cn: commonName,
+        authAttributes: user.authAttributes,
       }
       : commonName
         ? {
@@ -50,11 +51,14 @@ export const userMiddleware: Middleware = async (ctx, next) => {
           name: undefined,
           role: undefined,
           cn: commonName,
+          authAttributes: undefined,
         }
         : undefined,
     reqId: store?.reqId || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     method: store?.method || ctx.method,
     path: store?.path || ctx.path,
+    policyName: store?.policyName || 'mock-always-deny',
+    isAllowed: store?.isAllowed || false,
     timestamp: store?.timestamp || new Date().toISOString()
   };
 

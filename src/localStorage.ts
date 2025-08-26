@@ -10,6 +10,13 @@ export interface RequestContext {
     name: string;
     role: string;
     cn: string;
+    authAttributes?: string;
+  };
+  policyName: string;
+  isAllowed: boolean;
+  policyDecision?: {
+    Access: string;
+    Policy: string;
   };
 }
 
