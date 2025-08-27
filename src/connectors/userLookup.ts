@@ -2,7 +2,7 @@
 import { loadPlugin } from './plugin-loader';
 import { getEnvVar } from '../utils/envHelper';
 
-const abacPluginName = getEnvVar('ABAC-CONNECTOR-PLUGIN-NAME', 'simple');
+const abacPluginName = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
 
 function getPluginName() {
   return abacPluginName;
