@@ -1,21 +1,16 @@
 import { loadPolicy } from './policy-loader';
-import { getEnvVar } from '../utils/envHelper';
+import { getPolicyName} from './utils/policyMapper';
 
-const policyName = getEnvVar('PEP_POLICY_NAME', 'mock-always-deny');
 
-function getPolicyName() {
-  return policyName;
-}
-
-async function runPluginForUserLookup(authAttributes: string, protectedResource?: string) {
-  const policyExecutor = await loadPolicy(policyName);
+async function runPluginForUserLookup(authAttributes: string, protectedResource: string) {
+  const policyExecutor = await loadPolicy(getPolicyName(protectedResource));
   if (policyExecutor) {
     return await policyExecutor.executePolicy(authAttributes, protectedResource);
   }
 }
 
-async function runPolicy(authAttributes: string, protectedResource?: string) {
-    return await runPluginForUserLookup(authAttributes, protectedResource);
+async function runPolicy(authAttributes: string, protectedResource: string) {
+  return await runPluginForUserLookup(authAttributes, protectedResource);
 }
 
-export { runPolicy, getPolicyName };
+export { runPolicy };

@@ -1,7 +1,6 @@
 // app.ts
 import Koa from 'koa';
 import websockify from 'koa-websocket';
-import WebSocket from 'ws';
 import { websocketHandler } from './middleware/websocketHandler';
 
 import proxyRouter from './routes/proxy';
@@ -9,7 +8,7 @@ import { policyRendererMiddleware } from './middleware/policyRenderer';
 import { pepMiddleware } from './middleware/pep';
 import { loggerMiddleware } from './middleware/logger';
 import { userMiddleware } from './middleware/user';
-import { getEnvVar } from './utils/envHelper';
+import { WS_TARGET_URL } from './config/env';
 
 const app = websockify(new Koa({ asyncLocalStorage: true }));
 
@@ -29,7 +28,7 @@ type AuthPayload = {
   credentials?: string;
 };
 
-const targetWs = getEnvVar('WS_TARGET_URL', 'ws://10.182.1.86:7687/');
+const targetWs = WS_TARGET_URL;
 
 app.ws.use((ctx) => {
   // You can make the target URL configurable if needed

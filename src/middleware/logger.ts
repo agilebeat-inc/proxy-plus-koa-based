@@ -1,10 +1,9 @@
 import { Middleware } from 'koa';
 import { asyncLocalStorage } from '../localStorage';
-import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
+import { IGNORE_URLS_FOR_LOGGING_BY_PREFIX } from '../config/env';
 
-const ignore_prefixes = "['/analytics/graph/browser', '/analytics/browser/_app']";
-const prefixesToIgnoreInLogs = getEnvVar('IGNORE_URLS_FOR_LOGGING_BY_PREFIX', ignore_prefixes) || ignore_prefixes;
+const prefixesToIgnoreInLogs = IGNORE_URLS_FOR_LOGGING_BY_PREFIX;
 
 // Parse the prefixes string into an array (e.g., "['_app','/health']" => ['_app','/health'])
 function parsePrefixes(prefixes: string): string[] {
@@ -50,6 +49,7 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
     path: store?.path,
     event: 'START',
     user: store?.user || { cn: 'anonymous', id: null },
+    connectorName: store?.connectorName || 'simple',
     userTag,
     queryParams, 
   };

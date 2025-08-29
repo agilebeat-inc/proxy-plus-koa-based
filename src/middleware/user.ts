@@ -1,20 +1,20 @@
 import { Middleware } from 'koa';
 import { asyncLocalStorage, RequestContext } from '../localStorage';
-import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
 
+import { USER_HEADER_FOR_CN } from '../config/env';
+import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
+
+const userHeaderForCN = USER_HEADER_FOR_CN;
 // Import the JS connector
 const { lookupUserByCN } = require('../connectors/userLookup');
-
-const cnUserHeader = 'x-user-common-name';
-const userHeaderForCN = getEnvVar('USER_HEADER_FOR_CN', cnUserHeader) || cnUserHeader;
 
 export const userMiddleware: Middleware = async (ctx, next) => {
   const store = asyncLocalStorage.getStore();
   let user = ctx.state.user;
 
   // Extract common name from header
-  const headerKey = typeof userHeaderForCN === 'string' ? userHeaderForCN.toLowerCase() : cnUserHeader.toLowerCase();
+  const headerKey = userHeaderForCN.toLowerCase();
   const commonNameHeader = ctx.headers[headerKey];
   const commonName = Array.isArray(commonNameHeader)
     ? commonNameHeader[0]
@@ -24,7 +24,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
   if (!user) {
     if (commonName) {
       try {
-        user = await lookupUserByCN(commonName);
+        user = await lookupUserByCN(commonName, ctx.path);
         if (user) {
           logger.debug(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
         } else {
@@ -57,6 +57,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
     reqId: store?.reqId || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     method: store?.method || ctx.method,
     path: store?.path || ctx.path,
+    connectorName: getPluginName(ctx.path) || store?.connectorName || 'mock-always-deny',
     policyName: store?.policyName || 'mock-always-deny',
     isAllowed: store?.isAllowed || false,
     timestamp: store?.timestamp || new Date().toISOString()

@@ -1,24 +1,18 @@
-
 import { loadPlugin } from './plugin-loader';
-import { getEnvVar } from '../utils/envHelper';
+import { getPluginName } from './utils/connectorSettingsMapper';
 
-const abacPluginName = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
 
-function getPluginName() {
-  return abacPluginName;
-}
-
-async function runPluginForUserLookup(cn: string) {
-  const plugin = await loadPlugin(abacPluginName);
+async function runPluginForUserLookup(cn: string, protectedResource: string) {
+  const plugin = await loadPlugin(getPluginName(protectedResource));
   if (plugin) {
     return await plugin.runABACLookupFor(cn);
   }
 }
 
-async function lookupUserByCN(cn: string) {
+async function lookupUserByCN(cn: string, protectedResource: string) {
   // Example: Replace with real HTTP/LDAP/DB call
   if (!!cn) {
-    return await runPluginForUserLookup(cn);
+    return await runPluginForUserLookup(cn, protectedResource);
   }
   // Simulate not found
   return undefined;

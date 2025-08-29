@@ -12,11 +12,13 @@ export interface RequestContext {
     cn: string;
     authAttributes?: string;
   };
+  connectorName: string;
   policyName: string;
   isAllowed: boolean;
   policyDecision?: {
     Access: string;
     Policy: string;
+    Route?: string;
   };
 }
 

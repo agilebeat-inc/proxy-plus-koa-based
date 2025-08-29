@@ -11,7 +11,7 @@ export async function listPolicys(): Promise<string[]> {
       .filter(f => f.endsWith('.js') || f.endsWith('.ts'))
       .map(f => path.basename(f, path.extname(f)));
   } catch (error) {
-    console.error('Failed to list policies:', error);
+    logger.error('Failed to list policies:', error);
     return [];
   }
 }
@@ -21,7 +21,7 @@ export async function loadPolicy(policyName: string) {
     const plugin = await import(`./policies/${policyName}`);
     return plugin;
   } catch (error) {
-    logger.error({ "message": `Failed to load policy "${policyName}. List of available policies: ${await listPolicys()}` });
+    logger.error(JSON.stringify({ "message": `Failed to load policy '${policyName}'. List of available policies: ${await listPolicys()}` }));
     return null;
   }
 }
