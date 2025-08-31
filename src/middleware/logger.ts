@@ -46,6 +46,7 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
     timestamp: store?.timestamp,
     reqId: store?.reqId,
     method: store?.method,
+    protocol: store?.protocol,
     path: store?.path,
     event: 'START',
     user: store?.user || { cn: 'anonymous', id: null },

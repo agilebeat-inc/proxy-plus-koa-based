@@ -14,6 +14,7 @@ export const policyRendererMiddleware: Middleware = async (ctx, next) => {
     user: user, // Ensure user info is included in context
     reqId: store?.reqId || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     method: store?.method || ctx.method,
+    protocol: store?.protocol || ctx.protocol,
     path: store?.path || ctx.path,
     timestamp: store?.timestamp || new Date().toISOString(),
     connectorName: store?.connectorName || 'simple',

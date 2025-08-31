@@ -56,6 +56,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
         : undefined,
     reqId: store?.reqId || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     method: store?.method || ctx.method,
+    protocol: store?.protocol || ctx.protocol,
     path: store?.path || ctx.path,
     connectorName: getPluginName(ctx.path) || store?.connectorName || 'mock-always-deny',
     policyName: store?.policyName || 'mock-always-deny',

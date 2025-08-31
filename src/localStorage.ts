@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export interface RequestContext {
   reqId: string;
   method: string;
+  protocol: string;
   path: string;
   timestamp: string;
   user?: {
