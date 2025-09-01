@@ -1,6 +1,7 @@
 // middleware/auth.ts
 import { Middleware } from 'koa';
 import { asyncLocalStorage } from '../localStorage';
+import { DYNAMIC_ROUTES_INVENTORY_PREFIX } from '../config/env' 
 
 const DEFAULT_ACCESS_DENY_ERROR_MSG = `
 <!DOCTYPE html>
@@ -93,7 +94,7 @@ const DEFAULT_ACCESS_DENY_ERROR_MSG = `
         <strong>Contact us if you think that you should have access to the system.</strong><br>
         Email: <a href="mailto:admin@example.com">admin@example.com</a>
       </div>
-      <a class="button" href="/services">Back to Services</a>
+      <a class="button" href="${DYNAMIC_ROUTES_INVENTORY_PREFIX}">Back to Services</a>
     </div>
   </body>
 </html>
