@@ -16,6 +16,10 @@ if (dynamicRoutes.length === 0) {
 }
 
 dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
+  if (!target) {
+    logger.debug(`Ignoring route '${name}' in setting up dynamic routes because it is missing a target.`);
+    return;
+  }
   router.all(route, async (ctx) => {
     try {
       await new Promise<void>((resolve, reject) => {
@@ -155,6 +159,9 @@ router.get(dynamicRoutesServicesPrefix, async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route, attaching params if present
   const buttons = dynamicRoutes.map(r => {
+    if (!r.target) {
+      return '';
+    }
     const href = r.route.replace(/\(\.\*\)$/, '');
     const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
     let fullHref = href;

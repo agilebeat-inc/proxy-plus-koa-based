@@ -1,4 +1,5 @@
-export const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true, "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j", "policyName": "mock-always-allow", "connectorName": "mock"}]';
+export const DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX = '/services'
+export const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Services", "route": "{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}(.*)", "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Search", "route": "/search(.*)", "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true, "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j", "policyName": "mock-always-allow", "connectorName": "mock"}]';
 export const DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX = "['/analytics/graph/browser', '/analytics/browser/_app']";
 // Static HTML for the dynamic routes services page, configurable via env var
 export const DEFAULT_SERVICES_HTML = `
@@ -10,7 +11,7 @@ export const DEFAULT_SERVICES_HTML = `
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <style>
       html, body {
-        height: 100%;
+        height: 100%; 
         margin: 0;
         padding: 0;
         font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
