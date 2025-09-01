@@ -10,7 +10,7 @@ export async function listPolicys(): Promise<string[]> {
     return files
       .filter(f => f.endsWith('.js') || f.endsWith('.ts'))
       .map(f => path.basename(f, path.extname(f)));
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Failed to list policies:', error);
     return [];
   }
