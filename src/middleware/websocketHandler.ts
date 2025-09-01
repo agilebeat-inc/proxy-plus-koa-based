@@ -132,9 +132,9 @@ export async function websocketHandler(ctx: any) {
         ctx.websocket.send(msg);
       }
       if (Buffer.isBuffer(msg)) {
-        logSocketEventInfo(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
+        logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
       } else if (typeof msg === 'string') {
-        logSocketEventInfo(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
+        logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
       }
     });
 
