@@ -140,21 +140,21 @@ export async function websocketHandler(ctx: any) {
 
     // Handle open events
     ctx.websocket.on('open', () => {
-      logSocketEventInfo(context, `${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`, 'WS_OPEN_CLIENT', ctx.websocket.readyState);
+      logSocketEventInfo(context, 'Opened client WebSocket event', 'WS_OPEN_CLIENT', ctx.websocket.readyState);
     });
     
     target.on('open', () => {
-      logSocketEventInfo(context, `${typeof target === 'object' ? JSON.stringify(target) : target}`, 'WS_OPEN_TARGET', target.readyState);
+      logSocketEventInfo(context, 'Opened target WebSocket event', 'WS_OPEN_TARGET', target.readyState);
     });
 
     // Handle close events
     ctx.websocket.on('close', () => {
-      logSocketEventInfo(context, `${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`, 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
+      logSocketEventInfo(context, 'Closed client WebSocket event', 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
       target.close();
     });
 
     target.on('close', () => {
-      logSocketEventInfo(context, `${typeof target === 'object' ? JSON.stringify(target) : target}`, 'WS_CLOSE_TARGET', target.readyState);
+      logSocketEventInfo(context, 'Closed target WebSocket event', 'WS_CLOSE_TARGET', target.readyState);
       ctx.websocket.close();
     });
 
