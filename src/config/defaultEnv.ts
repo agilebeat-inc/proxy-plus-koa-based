@@ -29,7 +29,7 @@ export const DEFAULT_SERVICES_HTML = `
         border: 1px solid #e5e7eb;
       }
       h1 {
-        color: #2563eb; /* BioDDEx blue-600 */
+        color: #2563eb; /* blue-600 */
         font-size: 2.25rem; /* text-4xl */
         font-weight: 700;   /* font-bold */
         margin-bottom: 1.5em;
