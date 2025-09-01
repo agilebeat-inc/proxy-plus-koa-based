@@ -1,57 +1,172 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
+import { asyncLocalStorage, RequestContext } from '../localStorage';
+import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
+import { WS_TARGET_URL, USER_HEADER_FOR_CN } from '../config/env';
 
-export function websocketHandler(ctx: any, targetUrl: string) {
-  // Use provided targetUrl or fallback to env/default
-  const wsTarget = targetUrl;
-  // Connect to the target WebSocket server
-  const target = new WebSocket(wsTarget);
+const targetWs = WS_TARGET_URL;
+const userHeaderForCN = USER_HEADER_FOR_CN;
+const { lookupUserByCN } = require('../connectors/userLookup');
+const { runPolicy } = require('../pep/policy-executor');
 
-  // Forward messages from client to target
-  ctx.websocket.on('message', (msg: any) => {
-    logger.debug(`[client socket][message]: ${msg}`);
-    if (target.readyState === WebSocket.OPEN) {
-      target.send(msg);
-    } else {
-      target.once('open', () => target.send(msg));
-    }
-  });
+function extractUserCN(ctx: any): string  {
+  // Extract common name from header
+  const headerKey = userHeaderForCN.toLowerCase();
+  const commonNameHeader = ctx.headers[headerKey];
+  const commonName = Array.isArray(commonNameHeader)
+    ? commonNameHeader[0]
+    : commonNameHeader || 'anonymous';
 
-  // Forward messages from target to client
-  target.on('message', (msg: any) => {
+  return commonName;
+}
+
+async function constructRequestContext(ctx: any, commonName: string): Promise<RequestContext> {
+  const user = await lookupUserByCN(commonName, ctx.path);
+  const store = asyncLocalStorage.getStore();
+  const context: RequestContext = {
+    user: user
+      ? {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        cn: commonName,
+        authAttributes: user.authAttributes,
+      }
+      : commonName
+        ? {
+          id: undefined,
+          name: undefined,
+          role: undefined,
+          cn: commonName,
+          authAttributes: undefined,
+        }
+        : undefined,
+    reqId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    method: ctx.method,
+    protocol: ctx.protocol,
+    path: ctx.path,
+    connectorName: getPluginName(ctx.path) || 'simple',
+    policyName: store?.policyName || 'mock-always-deny',
+    isAllowed: false,
+    timestamp: store?.timestamp || new Date().toISOString()
+  };
+  return context;
+}
+
+function logSocketEventInfo(context: RequestContext, message: string, event: string, status?: number) {
+  logger.info({
+      timestamp: new Date().toISOString(),
+      reqId: context.reqId,
+      status: status,
+      event: event,
+      path: context.path,
+      user: context.user,
+      policyName: context.policyName,
+      message: message
+    });
+}
+
+function logSocketEventDebug(context: RequestContext, message: string, event: string, status?: number) {
+  logger.debug({
+      timestamp: new Date().toISOString(),
+      reqId: context.reqId,
+      status: status,
+      event: event,
+      path: context.path,
+      user: context.user,
+      policyName: context.policyName,
+      message: message
+    });
+}
+
+function logSocketEventError(context: RequestContext, error: any, event: string, status?: number) {
+  logger.error({
+      timestamp: new Date().toISOString(),
+      reqId: context.reqId,
+      status: status,
+      event: event,
+      path: context.path,
+      user: context.user,
+      policyName: context.policyName,
+      message: error?.message || error,
+      stack: error?.stack
+    });
+}
+
+export async function websocketHandler(ctx: any) {
+  const context = await constructRequestContext(ctx, extractUserCN(ctx));
+  context.isAllowed = await runPolicy(context?.user?.authAttributes, ctx.path) || false;
+
+  // Block connection if not allowed
+  if (context.isAllowed) {
     if (ctx.websocket.readyState === WebSocket.OPEN) {
-      ctx.websocket.send(msg);
-    }
-  });
+      ctx.websocket.close();
+      logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_CLOSE', 403);
+      return;
+    } 
+    logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_IGNORE', 403);
+    return;
+  } else {
+    const target = new WebSocket(targetWs);
+    logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_CREATE_TARGET', target.readyState);
 
-  // Handle open events
-  ctx.websocket.on('open', () => {
-    logger.debug(`[client socket][On Open]: ${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`);
-  });
+    // Forward messages from client to target
+    ctx.websocket.on('message', (msg: any) => {
+      logger.debug(`[client socket][message]: ${msg}`);
+      if (target.readyState === WebSocket.OPEN) {
+        target.send(msg);
+      } else {
+        target.once('open', () => target.send(msg));
+        logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
+      }
+      if (Buffer.isBuffer(msg)) {
+        logSocketEventInfo(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
+      } else if (typeof msg === 'string') {
+        logSocketEventInfo(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+      }
+    });
 
-  target.on('open', () => {
-    logger.debug(`[target socket][On Open]: ${typeof target === 'object' ? JSON.stringify(target) : target}`);
-  });
+    // Forward messages from target to client
+    target.on('message', (msg: any) => {
+      if (ctx.websocket.readyState === WebSocket.OPEN) {
+        ctx.websocket.send(msg);
+      }
+      if (Buffer.isBuffer(msg)) {
+        logSocketEventInfo(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
+      } else if (typeof msg === 'string') {
+        logSocketEventInfo(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
+      }
+    });
 
-  // Handle close events
-  ctx.websocket.on('close', () => {
-    logger.debug(`[client socket][On Close]: ${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`);
-    target.close();
-  });
+    // Handle open events
+    ctx.websocket.on('open', () => {
+      logSocketEventInfo(context, `${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`, 'WS_OPEN_CLIENT', ctx.websocket.readyState);
+    });
+    
+    target.on('open', () => {
+      logSocketEventInfo(context, `${typeof target === 'object' ? JSON.stringify(target) : target}`, 'WS_OPEN_TARGET', target.readyState);
+    });
 
-  target.on('close', () => {
-    logger.debug(`[target socket][On Close]: ${typeof target === 'object' ? JSON.stringify(target) : target}`);
-    ctx.websocket.close();
-  });
+    // Handle close events
+    ctx.websocket.on('close', () => {
+      logSocketEventInfo(context, `${typeof ctx.websocket === 'object' ? JSON.stringify(ctx.websocket) : ctx.websocket}`, 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
+      target.close();
+    });
 
-  // Handle errors
-  ctx.websocket.on('error', (err: any) => {
-    logger.error(`[client socket][On Error]: ${typeof err === 'object' ? JSON.stringify(err) : err}`);
-    target.terminate();
-  });
+    target.on('close', () => {
+      logSocketEventInfo(context, `${typeof target === 'object' ? JSON.stringify(target) : target}`, 'WS_CLOSE_TARGET', target.readyState);
+      ctx.websocket.close();
+    });
 
-  target.on('error', (err: any) => {
-    logger.error(`[target socket][On Error]: ${typeof err === 'object' ? JSON.stringify(err) : err}`);
-    ctx.websocket.terminate();
-  });
+    // Handle errors
+    ctx.websocket.on('error', (err: any) => {
+      logSocketEventError(context, err, 'WS_ERROR_CLIENT');
+      target.terminate();
+    });
+
+    target.on('error', (err: any) => {
+      logSocketEventError(context, err, 'WS_ERROR_TARGET');
+      ctx.websocket.terminate();
+    });
+  }
 }
