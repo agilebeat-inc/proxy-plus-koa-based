@@ -2,15 +2,16 @@ import { loadPolicy } from './policy-loader';
 import { getPolicyName} from './utils/policyMapper';
 
 
-async function runPluginForUserLookup(authAttributes: string, protectedResource: string) {
-  const policyExecutor = await loadPolicy(getPolicyName(protectedResource));
+async function runPolicyForAttrAndResource(authAttributes: string, protectedResource: string) {
+  let policyName:string = getPolicyName(protectedResource)
+  const policyExecutor = await loadPolicy(policyName);
   if (policyExecutor) {
     return await policyExecutor.executePolicy(authAttributes, protectedResource);
   }
 }
 
 async function runPolicy(authAttributes: string, protectedResource: string) {
-  return await runPluginForUserLookup(authAttributes, protectedResource);
+  return await runPolicyForAttrAndResource(authAttributes, protectedResource);
 }
 
 export { runPolicy };

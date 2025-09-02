@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import logger from '../utils/logger';
 import { asyncLocalStorage, RequestContext } from '../localStorage';
 import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
+import { getPolicyName} from '../pep/utils/policyMapper';
 import { WS_TARGET_URL, USER_HEADER_FOR_CN } from '../config/env';
 
 const targetWs = WS_TARGET_URL;
@@ -46,7 +47,7 @@ async function constructRequestContext(ctx: any, commonName: string): Promise<Re
     protocol: ctx.protocol,
     path: ctx.path,
     connectorName: getPluginName(ctx.path) || 'simple',
-    policyName: store?.policyName || 'mock-always-deny',
+    policyName: getPolicyName(ctx.path) || store?.policyName || 'mock-always-deny',
     isAllowed: false,
     timestamp: store?.timestamp || new Date().toISOString()
   };
@@ -98,7 +99,7 @@ export async function websocketHandler(ctx: any) {
   context.isAllowed = await runPolicy(context?.user?.authAttributes, ctx.path) || false;
 
   // Block connection if not allowed
-  if (context.isAllowed) {
+  if (!context.isAllowed) {
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.close();
       logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_CLOSE', 403);
@@ -120,9 +121,9 @@ export async function websocketHandler(ctx: any) {
         logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
       }
       if (Buffer.isBuffer(msg)) {
-        logSocketEventInfo(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
+        logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
       } else if (typeof msg === 'string') {
-        logSocketEventInfo(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+        logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
       }
     });
 
