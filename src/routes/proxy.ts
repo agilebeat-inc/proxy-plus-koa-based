@@ -1,11 +1,12 @@
 // routes/proxy.ts
-import { getEnvVar } from '../utils/envHelper';
 import Router from 'koa-router';
 import http, { RequestOptions, IncomingMessage } from 'http';
 import https from 'https';
 import { URL } from 'url';
 import logger from '../utils/logger';
 import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX } from '../config/env' 
+import { runPolicy } from '../pep/policy-executor';
+import { asyncLocalStorage } from '../localStorage';
 
 const router = new Router();
 
@@ -153,23 +154,26 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
   });
 });
 
-const dynamicRoutesServicesPrefix = DYNAMIC_ROUTES_INVENTORY_PREFIX;
-
-router.get(dynamicRoutesServicesPrefix, async (ctx) => {
+router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route, attaching params if present
-  const buttons = dynamicRoutes.map(r => {
-    if (!r.target) {
-      return '';
-    }
-    const href = r.route.replace(/\(\.\*\)$/, '');
-    const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
-    let fullHref = href;
-    if (r.params) {
-      fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
-    }
-    return `<a class="button" href="${fullHref}">${label}</a>`;
-  }).join('\n');
+  const buttons = (
+    await Promise.all(dynamicRoutes.map(async r => {
+      const store = asyncLocalStorage.getStore();
+      const isAllowed = await runPolicy(store?.user?.authAttributes ?? '', r.route) || false;
+      if (!r.target || !isAllowed) {
+        console.log(r.route)
+        return '';
+      }
+      const href = r.route.replace(/\(\.\*\)$/, '');
+      const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
+      let fullHref = href;
+      if (r.params) {
+        fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
+      }
+      return `<a class="button" href="${fullHref}">${label}</a>`;
+    }))
+  ).join('\n');
   ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);
 });
 
@@ -194,8 +198,8 @@ router.all('/search', async (ctx, next) => {
 router.all('(.*)', async (ctx) => {
   // Only redirect if not already at the services prefix
 
-  if (ctx.path !== dynamicRoutesServicesPrefix) {
-    ctx.redirect(dynamicRoutesServicesPrefix);
+  if (ctx.path !== DYNAMIC_ROUTES_INVENTORY_PREFIX) {
+    ctx.redirect(DYNAMIC_ROUTES_INVENTORY_PREFIX);
   }
 });
 

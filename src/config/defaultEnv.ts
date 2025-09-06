@@ -1,5 +1,50 @@
 export const DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX = '/services'
-export const DEFAULT_DYNAMIC_ROUTES = '[{"name": "Services", "route": "/", "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Services", "route": "{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}(.*)", "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Search", "route": "/search(.*)", "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Data Browser","route": "/analytics/(.*)", "target": "http://10.182.1.86:3001", "rewritebase": true, "policyName": "mock-always-allow", "connectorName": "simple"}, {"name": "Link Analytics", "route": "/graph(.*)", "target": "http://10.182.1.86:7474", "rewritebase": false, "params": "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j", "policyName": "mock-always-allow", "connectorName": "mock"}]';
+export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
+  {
+    name: "Services",
+    route: "/",
+    policyName: "mock-always-allow",
+    connectorName: "simple"
+  },
+  {
+    name: "Services",
+    route: "{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}(.*)",
+    policyName: "mock-always-allow",
+    connectorName: "simple"
+  },
+  {
+    name: "Search",
+    route: "/search(.*)",
+    policyName: "mock-always-allow",
+    connectorName: "simple"
+  },
+  {
+    name: "Data Browser",
+    route: "/analytics/(.*)",
+    target: "http://10.182.1.86:3001",
+    rewritebase: true,
+    policyName: "mock-always-allow",
+    connectorName: "simple"
+  },
+  {
+    name: "Link Analytics",
+    route: "/graph(.*)",
+    target: "http://10.182.1.86:7474",
+    rewritebase: false,
+    params: "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j",
+    policyName: "mock-always-allow",
+    connectorName: "mock"
+  },
+  {
+    name: "Mock Page",
+    route: "/olaf(.*)",
+    target: "http://10.182.1.86:7474",
+    rewritebase: false,
+    params: "/browser?dbms=neo4j://Anonymous@localhost:3000&db=neo4j",
+    policyName: "mock-always-deny",
+    connectorName: "mock"
+  }
+]);
 export const DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX = "['/analytics/graph/browser', '/analytics/browser/_app']";
 // Static HTML for the dynamic routes services page, configurable via env var
 export const DEFAULT_SERVICES_HTML = `
@@ -29,7 +74,7 @@ export const DEFAULT_SERVICES_HTML = `
         border: 1px solid #e5e7eb;
       }
       h1 {
-        color: #2563eb; /* blue-600 */
+        color: #000080; /* blue-600 */
         font-size: 2.25rem; /* text-4xl */
         font-weight: 700;   /* font-bold */
         margin-bottom: 1.5em;
