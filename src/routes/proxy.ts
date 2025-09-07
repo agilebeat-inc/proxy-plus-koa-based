@@ -162,7 +162,6 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
       const store = asyncLocalStorage.getStore();
       const isAllowed = await runPolicy(store?.user?.authAttributes ?? '', r.route) || false;
       if (!r.target || !isAllowed) {
-        console.log(r.route)
         return '';
       }
       const href = r.route.replace(/\(\.\*\)$/, '');
@@ -171,7 +170,10 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
       if (r.params) {
         fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
       }
-      return `<a class="button" href="${fullHref}">${label}</a>`;
+      if (r.icon) {
+        return `<a class="button" href="${fullHref}"><span style="display: inline-flex; align-items: center; gap: 0.7em;"> ${r.icon} </span> <span class="service-text">${label}</span></a>`;
+      }
+      return `<a class="button" href="${fullHref}"> <span class="service-text"> ${label}</span></a>`;
     }))
   ).join('\n');
   ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);

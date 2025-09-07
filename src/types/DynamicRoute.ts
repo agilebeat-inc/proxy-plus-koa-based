@@ -6,4 +6,5 @@ export interface DynamicRoute {
   params?: string;
   policyName?: string;
   connectorName?: string;
+  icon?: string;
 }
