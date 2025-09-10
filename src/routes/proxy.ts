@@ -161,7 +161,8 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
     await Promise.all(dynamicRoutes.map(async r => {
       const store = asyncLocalStorage.getStore();
       const isAllowed = await runPolicy(store?.user?.authAttributes ?? '', r.route) || false;
-      if (!r.target || !isAllowed) {
+      if (!r.target || !!r?.hideIfNoAccess) {
+        logger.info(`Hiding button route '${r.name}' in inventory because it is missing a target (value: ${r.target}) or hideIfNoAccess (actual value: ${r.hideIfNoAccess}) is true.`);
         return '';
       }
       const href = r.route.replace(/\(\.\*\)$/, '');
@@ -170,10 +171,18 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
       if (r.params) {
         fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
       }
-      if (r.icon) {
-        return `<a class="button" href="${fullHref}"><span style="display: inline-flex; align-items: center; gap: 0.7em;"> ${r.icon} </span> <span class="service-text">${label}</span></a>`;
+      // If not allowed, render as inactive button (not clickable, visually disabled)
+      if (!isAllowed) {
+        if (r.icon) {
+          return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
+        }
+        return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
       }
-      return `<a class="button" href="${fullHref}"> <span class="service-text"> ${label}</span></a>`;
+      // Allowed: render as normal clickable button
+      if (r.icon) {
+        return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
+      }
+      return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
     }))
   ).join('\n');
   ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);

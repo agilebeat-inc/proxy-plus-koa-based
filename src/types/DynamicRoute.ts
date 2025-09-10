@@ -7,4 +7,5 @@ export interface DynamicRoute {
   policyName?: string;
   connectorName?: string;
   icon?: string;
+  hideIfNoAccess?: boolean;
 }

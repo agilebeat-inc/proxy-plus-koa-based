@@ -42,8 +42,29 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     route: "/olaf(.*)",
     target: "https://google.com",
     rewritebase: true,
-    policyName: "mock-always-allow",
-    connectorName: "mock"
+    policyName: "mock-always-deny",
+    connectorName: "mock",
+    hideIfNoAccess: false
+  },
+  {
+    name: "Hidden Service by Policy",
+    route: "/olaf(.*)",
+    target: "https://google.com",
+    rewritebase: true,
+    policyName: "mock-always-deny",
+    connectorName: "mock",
+    hideIfNoAccess: false,
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"> <path stroke="none" d="M0 0h24v24H0z" fill="none"></path> <circle cx="12" cy="12" r="9"></circle> <line x1="4.6" y1="7" x2="19.4" y2="7"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="4.6" y1="17" x2="19.4" y2="17"></line> </svg>',
+  },
+  {
+    name: "Hidden Service by Policy",
+    route: "/olaf(.*)",
+    target: "https://google.com",
+    rewritebase: true,
+    policyName: "mock-always-deny",
+    connectorName: "mock",
+    hideIfNoAccess: true,
+    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"> <path stroke="none" d="M0 0h24v24H0z" fill="none"></path> <circle cx="12" cy="12" r="9"></circle> <line x1="4.6" y1="7" x2="19.4" y2="7"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="4.6" y1="17" x2="19.4" y2="17"></line> </svg>',
   }
 ]);
 export const DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX = "['/analytics/graph/browser', '/analytics/browser/_app']";
@@ -79,7 +100,7 @@ export const DEFAULT_SERVICES_HTML = `
         }
 
         h1 {
-            color: #000080;
+            color: #000000;
             /* blue-600 */
             font-size: 2.25rem;
             /* text-4xl */
@@ -134,6 +155,15 @@ export const DEFAULT_SERVICES_HTML = `
             color: #2563eb;
         }
 
+        .button.inactive {
+          pointer-events: none;
+          opacity: 0.5;
+          cursor: not-allowed;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.7em;
+        }
+
         @media (max-width: 600px) {
             .container {
                 margin: 2vh 1vw 0 1vw;
@@ -146,13 +176,13 @@ export const DEFAULT_SERVICES_HTML = `
         }
 
         .service-text {
-            color: #000080;
+            color: #000000;
             vertical-align: middle;
             transition: color 0.2s;
         }
 
         .button:hover .service-text {
-            color: #2563eb;
+            color: #000000;
         }
     </style>
 </head>
@@ -227,6 +257,7 @@ export const DEFAULT_UPSTREAM_ERROR_MSG = `
         border-color: #0f172a;
         background: #e5e7eb;
       }
+
       a {
         color: #71717a;
         text-decoration: underline dotted #a1a1aa 1px;
