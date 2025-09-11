@@ -4,9 +4,12 @@ import http, { RequestOptions, IncomingMessage } from 'http';
 import https from 'https';
 import { URL } from 'url';
 import logger from '../utils/logger';
-import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX } from '../config/env' 
+import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX, USER_HEADER_FOR_CN } from '../config/env' 
 import { runPolicy } from '../pep/policy-executor';
 import { asyncLocalStorage } from '../localStorage';
+const userHeaderForCN = USER_HEADER_FOR_CN;
+// Import the JS connector
+const { lookupUserByCN } = require('../connectors/userLookup');
 
 const router = new Router();
 
@@ -154,15 +157,37 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
   });
 });
 
+
+async function determineAndGetUserUsingReqContextAndResource(ctx: any, resourcePath: string): Promise<any> {
+  const headerKey = userHeaderForCN.toLowerCase();
+  const commonNameHeader = ctx.headers[headerKey];
+  const commonName = Array.isArray(commonNameHeader)
+    ? commonNameHeader[0]
+    : commonNameHeader || 'anonymous';
+
+  let user = {};
+  if (commonName) {
+    try {
+      user = await lookupUserByCN(commonName, resourcePath);
+      if (user) {
+        logger.debug(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
+      } else {
+        logger.warn(`No user found for common name ${commonName}`);
+      }
+    } catch (error) {
+      logger.error(`Error looking up user by common name ${commonName}: ${error instanceof Error ? error.stack || error.message : JSON.stringify(error)}`);
+    }
+  }
+  return user;
+}
+
 router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
   ctx.type = 'html';
   // Generate a button for each dynamic route, attaching params if present
   const buttons = (
     await Promise.all(dynamicRoutes.map(async r => {
-      const store = asyncLocalStorage.getStore();
-      const isAllowed = await runPolicy(store?.user?.authAttributes ?? '', r.route) || false;
       if (!r.target || !!r?.hideIfNoAccess) {
-        logger.info(`Hiding button route '${r.name}' in inventory because it is missing a target (value: ${r.target}) or hideIfNoAccess (actual value: ${r.hideIfNoAccess}) is true.`);
+        logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because it is missing a target (value: ${r.target}) or hideIfNoAccess (actual value: ${r.hideIfNoAccess}) is true.`);
         return '';
       }
       const href = r.route.replace(/\(\.\*\)$/, '');
@@ -171,6 +196,11 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
       if (r.params) {
         fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
       }
+
+      const user = await determineAndGetUserUsingReqContextAndResource(ctx, r.route)
+      const isAllowed = await runPolicy(user?.authAttributes ?? '', r.route) || false;
+      logger.debug(`While rendering button, for a given route: ${r.route} following user was determined ${JSON.stringify(user)}. The decsion isAllowed: ${isAllowed}`);
+
       // If not allowed, render as inactive button (not clickable, visually disabled)
       if (!isAllowed) {
         if (r.icon) {
