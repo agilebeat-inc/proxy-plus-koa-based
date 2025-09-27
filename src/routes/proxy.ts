@@ -186,7 +186,7 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
   // Generate a button for each dynamic route, attaching params if present
   const buttons = (
     await Promise.all(dynamicRoutes.map(async r => {
-      if (!r.target || !!r?.hideIfNoAccess) {
+      if (!r.target) {
         logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because it is missing a target (value: ${r.target}) or hideIfNoAccess (actual value: ${r.hideIfNoAccess}) is true.`);
         return '';
       }
@@ -202,17 +202,20 @@ router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
       logger.debug(`While rendering button, for a given route: ${r.route} following user was determined ${JSON.stringify(user)}. The decsion isAllowed: ${isAllowed}`);
 
       // If not allowed, render as inactive button (not clickable, visually disabled)
-      if (!isAllowed) {
-        if (r.icon) {
-          return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
+      if (!r?.hideIfNoAccess) {
+        if (!isAllowed) {
+          if (r.icon) {
+            return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
+          }
+          return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
         }
-        return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
+      
+        // Allowed: render as normal clickable button
+        if (r.icon) {
+          return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
+        }
+        return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
       }
-      // Allowed: render as normal clickable button
-      if (r.icon) {
-        return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
-      }
-      return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
     }))
   ).join('\n');
   ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);
