@@ -58,7 +58,7 @@ export const userMiddleware: Middleware = async (ctx, next) => {
     method: store?.method || ctx.method,
     protocol: store?.protocol || ctx.protocol,
     path: store?.path || ctx.path,
-    connectorName: getPluginName(ctx.path) || store?.connectorName || 'mock-always-deny',
+    connectorName: getPluginName(ctx.path) || store?.connectorName || 'simple',
     policyName: store?.policyName || 'mock-always-deny',
     isAllowed: store?.isAllowed || false,
     timestamp: store?.timestamp || new Date().toISOString()

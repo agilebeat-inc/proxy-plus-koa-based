@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import logger from '../utils/logger';
 import { asyncLocalStorage, RequestContext } from '../localStorage';
 import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
-import { getPolicyName} from '../pep/utils/policyMapper';
+import { getPolicyName } from '../pep/utils/policyMapper';
 import { WS_TARGET_URL, USER_HEADER_FOR_CN } from '../config/env';
 
 const targetWs = WS_TARGET_URL;
@@ -10,7 +10,7 @@ const userHeaderForCN = USER_HEADER_FOR_CN;
 const { lookupUserByCN } = require('../connectors/userLookup');
 const { runPolicy } = require('../pep/policy-executor');
 
-function extractUserCN(ctx: any): string  {
+function extractUserCN(ctx: any): string {
   // Extract common name from header
   const headerKey = userHeaderForCN.toLowerCase();
   const commonNameHeader = ctx.headers[headerKey];
@@ -56,42 +56,42 @@ async function constructRequestContext(ctx: any, commonName: string): Promise<Re
 
 function logSocketEventInfo(context: RequestContext, message: string, event: string, status?: number) {
   logger.info({
-      timestamp: new Date().toISOString(),
-      reqId: context.reqId,
-      status: status,
-      event: event,
-      path: context.path,
-      user: context.user,
-      policyName: context.policyName,
-      message: message
-    });
+    timestamp: new Date().toISOString(),
+    reqId: context.reqId,
+    status: status,
+    event: event,
+    path: context.path,
+    user: context.user,
+    policyName: context.policyName,
+    message: message
+  });
 }
 
 function logSocketEventDebug(context: RequestContext, message: string, event: string, status?: number) {
   logger.debug({
-      timestamp: new Date().toISOString(),
-      reqId: context.reqId,
-      status: status,
-      event: event,
-      path: context.path,
-      user: context.user,
-      policyName: context.policyName,
-      message: message
-    });
+    timestamp: new Date().toISOString(),
+    reqId: context.reqId,
+    status: status,
+    event: event,
+    path: context.path,
+    user: context.user,
+    policyName: context.policyName,
+    message: message
+  });
 }
 
 function logSocketEventError(context: RequestContext, error: any, event: string, status?: number) {
   logger.error({
-      timestamp: new Date().toISOString(),
-      reqId: context.reqId,
-      status: status,
-      event: event,
-      path: context.path,
-      user: context.user,
-      policyName: context.policyName,
-      message: error?.message || error,
-      stack: error?.stack
-    });
+    timestamp: new Date().toISOString(),
+    reqId: context.reqId,
+    status: status,
+    event: event,
+    path: context.path,
+    user: context.user,
+    policyName: context.policyName,
+    message: error?.message || error,
+    stack: error?.stack
+  });
 }
 
 export async function websocketHandler(ctx: any) {
@@ -102,72 +102,71 @@ export async function websocketHandler(ctx: any) {
   if (!context.isAllowed) {
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.close();
-      logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_CLOSE', 403);
+      logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_CLOSE_TRIGGERED_BY_POLICY', 403);
       return;
-    } 
-    logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_IGNORE', 403);
+    }
+    logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_IGNORE_TRIGGERED_BY_POLICY', 403);
     return;
-  } else {
-    const target = new WebSocket(targetWs);
-    logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_CREATE_TARGET', target.readyState);
-
-    // Forward messages from client to target
-    ctx.websocket.on('message', (msg: any) => {
-      logger.debug(`[client socket][message]: ${msg}`);
-      if (target.readyState === WebSocket.OPEN) {
-        target.send(msg);
-      } else {
-        target.once('open', () => target.send(msg));
-        logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
-      }
-      if (Buffer.isBuffer(msg)) {
-        logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
-      } else if (typeof msg === 'string') {
-        logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
-      }
-    });
-
-    // Forward messages from target to client
-    target.on('message', (msg: any) => {
-      if (ctx.websocket.readyState === WebSocket.OPEN) {
-        ctx.websocket.send(msg);
-      }
-      if (Buffer.isBuffer(msg)) {
-        logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
-      } else if (typeof msg === 'string') {
-        logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
-      }
-    });
-
-    // Handle open events
-    ctx.websocket.on('open', () => {
-      logSocketEventInfo(context, 'Opened client WebSocket event', 'WS_OPEN_CLIENT', ctx.websocket.readyState);
-    });
-    
-    target.on('open', () => {
-      logSocketEventInfo(context, 'Opened target WebSocket event', 'WS_OPEN_TARGET', target.readyState);
-    });
-
-    // Handle close events
-    ctx.websocket.on('close', () => {
-      logSocketEventInfo(context, 'Closed client WebSocket event', 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
-      target.close();
-    });
-
-    target.on('close', () => {
-      logSocketEventInfo(context, 'Closed target WebSocket event', 'WS_CLOSE_TARGET', target.readyState);
-      ctx.websocket.close();
-    });
-
-    // Handle errors
-    ctx.websocket.on('error', (err: any) => {
-      logSocketEventError(context, err, 'WS_ERROR_CLIENT');
-      target.terminate();
-    });
-
-    target.on('error', (err: any) => {
-      logSocketEventError(context, err, 'WS_ERROR_TARGET');
-      ctx.websocket.terminate();
-    });
   }
+  const target = new WebSocket(targetWs);
+  logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_CREATE_TARGET', target.readyState);
+
+  // Forward messages from client to target
+  ctx.websocket.on('message', (msg: any) => {
+    if (target.readyState === WebSocket.OPEN) {
+      target.send(msg);
+    } else {
+      target.once('open', () => target.send(msg));
+      logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
+    }
+    if (Buffer.isBuffer(msg)) {
+      logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
+    } else if (typeof msg === 'string') {
+      logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+    }
+  });
+
+  // Forward messages from target to client
+  target.on('message', (msg: any) => {
+    if (ctx.websocket.readyState === WebSocket.OPEN) {
+      ctx.websocket.send(msg);
+    }
+    console.log('>>> target.on message, msg: ', msg.toString('hex'));
+    if (Buffer.isBuffer(msg)) {
+      logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
+    } else if (typeof msg === 'string') {
+      logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
+    }
+  });
+
+  // Handle open events
+  ctx.websocket.on('open', () => {
+    logSocketEventInfo(context, 'Opened client WebSocket event', 'WS_OPEN_CLIENT', ctx.websocket.readyState);
+  });
+
+  target.on('open', () => {
+    logSocketEventInfo(context, 'Opened target WebSocket event', 'WS_OPEN_TARGET', target.readyState);
+  });
+
+  // Handle close events
+  ctx.websocket.on('close', () => {
+    logSocketEventInfo(context, 'Closed client WebSocket event', 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
+    target.close();
+  });
+
+  target.on('close', () => {
+    logSocketEventInfo(context, 'Closed target WebSocket event', 'WS_CLOSE_TARGET', target.readyState);
+    ctx.websocket.close();
+  });
+
+  // Handle errors
+  ctx.websocket.on('error', (err: any) => {
+    logSocketEventError(context, err, 'WS_ERROR_CLIENT');
+    target.terminate();
+  });
+
+  target.on('error', (err: any) => {
+    logSocketEventError(context, err, 'WS_ERROR_TARGET');
+    ctx.websocket.terminate();
+  });
 }

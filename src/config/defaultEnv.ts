@@ -1,7 +1,7 @@
 export const DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX = '/services'
 export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
-    name: "Services",
+    name: "root",
     route: "/",
     policyName: "mock-always-allow",
     connectorName: "simple"
