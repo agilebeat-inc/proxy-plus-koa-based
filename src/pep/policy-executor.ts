@@ -3,7 +3,7 @@ import { getPolicyName} from './utils/policyMapper';
 
 
 async function runPolicyForAttrAndResource(authAttributes: string, protectedResource: string) {
-  let policyName:string = getPolicyName(protectedResource)
+  const policyName:string = getPolicyName(protectedResource)
   const policyExecutor = await loadPolicy(policyName);
   if (policyExecutor) {
     return await policyExecutor.executePolicy(authAttributes, protectedResource);

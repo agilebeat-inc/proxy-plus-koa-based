@@ -1,5 +1,7 @@
 
-function enrichWithAuthAttributes(user: any) {
+type User = { id: string; name: string; role: string; cn: string; authAttributes?: string };
+
+function enrichWithAuthAttributes(user: User) {
   user.authAttributes = user?.role ? [user.role].toString() : [].toString();
   return user;
 }

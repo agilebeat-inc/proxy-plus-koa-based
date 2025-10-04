@@ -6,11 +6,10 @@ import { URL } from 'url';
 import logger from '../utils/logger';
 import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX, USER_HEADER_FOR_CN } from '../config/env' 
 import { runPolicy } from '../pep/policy-executor';
-import { asyncLocalStorage } from '../localStorage';
 const userHeaderForCN = USER_HEADER_FOR_CN;
 // Import the JS connector
-const { lookupUserByCN } = require('../connectors/userLookup');
-
+import { lookupUserByCN } from '../connectors/userLookup';
+import { ParameterizedContext } from 'koa';
 const router = new Router();
 
 const dynamicRoutes = DYNAMIC_ROUTES;
@@ -67,7 +66,7 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
           }
 
           // Intercept HTML responses and inject <base href="..."> if rewritebase is true
-          let bodyChunks: Buffer[] = [];
+          const bodyChunks: Buffer[] = [];
           const contentType = proxyRes.headers['content-type'] || '';
           const shouldRewriteHtml = contentType.includes('text/html') && rewritebase;
 
@@ -157,8 +156,8 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
   });
 });
 
-
-async function determineAndGetUserUsingReqContextAndResource(ctx: any, resourcePath: string): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/no-empty-object-type
+async function determineAndGetUserUsingReqContextAndResource(ctx: ParameterizedContext<any, Router.IRouterParamContext<any, {}>, any>, resourcePath: string): Promise<any> {
   const headerKey = userHeaderForCN.toLowerCase();
   const commonNameHeader = ctx.headers[headerKey];
   const commonName = Array.isArray(commonNameHeader)
@@ -234,15 +233,24 @@ if (dynamicRoutes.length > 0) {
 }
 
 // Special case (patch for the webapp): if path is /search, redirect to /analytics/search (preserve query string)
-router.all('/search', async (ctx, next) => {
-  ctx.redirect(`/analytics/search${ctx.search || ''}`);
+router.all('/search', async (ctx) => {
+  const isWebSocketUpgrade =
+    ctx.headers['upgrade'] &&
+    ctx.headers['upgrade'].toLowerCase() === 'websocket';
+
+  if (!isWebSocketUpgrade) {
+    ctx.redirect(`/analytics/search${ctx.search || ''}`);
+  }
 });
 
 // Catch-all route: redirect to inventory if no other route matched
 router.all('(.*)', async (ctx) => {
   // Only redirect if not already at the services prefix
+  const isWebSocketUpgrade =
+    ctx.headers['upgrade'] &&
+    ctx.headers['upgrade'].toLowerCase() === 'websocket';
 
-  if (ctx.path !== DYNAMIC_ROUTES_INVENTORY_PREFIX) {
+  if (ctx.path !== DYNAMIC_ROUTES_INVENTORY_PREFIX && !isWebSocketUpgrade) {
     ctx.redirect(DYNAMIC_ROUTES_INVENTORY_PREFIX);
   }
 });

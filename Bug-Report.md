@@ -1,5 +1,7 @@
 # Bug Report
 
+##
+
 ### 1. Incorrect redirect
 
 For the following URL:

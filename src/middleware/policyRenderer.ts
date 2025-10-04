@@ -3,7 +3,7 @@ import { asyncLocalStorage, RequestContext } from '../localStorage';
 import { getPolicyName} from '../pep/utils/policyMapper';
 
 // Import the JS connector
-const { runPolicy } = require('../pep/policy-executor');
+import { runPolicy } from '../pep/policy-executor';
 
 export const policyRendererMiddleware: Middleware = async (ctx, next) => {
   const store = asyncLocalStorage.getStore();    

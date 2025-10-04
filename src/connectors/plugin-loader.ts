@@ -20,8 +20,8 @@ export async function loadPlugin(pluginName: string) {
   try {
     const plugin = await import(`./plugins/${pluginName}`);
     return plugin;
-  } catch (error) {
-    logger.error({ "message": `Failed to load plugin "${pluginName}. List of available plugins: ${await listPlugins()}` });
+  } catch (error: unknown) {
+    logger.error({ "message": `Failed to load plugin "${pluginName}. List of available plugins: ${await listPlugins()}, error: ${error instanceof Error ? error.message : String(error)}` });
     return null;
   }
 }

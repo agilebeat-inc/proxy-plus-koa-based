@@ -13,7 +13,7 @@ function parsePrefixes(prefixes: string): string[] {
   } catch {
     // Fallback: split by comma and trim
     return prefixes
-      .replace(/[\[\]']/g, '')
+      .replace(/[[\]']/g, '')
       .split(',')
       .map((p) => p.trim())
       .filter(Boolean);
@@ -70,7 +70,13 @@ export const loggerMiddleware: Middleware = async (ctx, next) => {
     logger.info(logEnd);
   } catch (err) {
     const duration = Date.now() - start;
-    const logError: any = {
+    const logError: {
+      timestamp: string;
+      reqId?: string;
+      event: string;
+      error: string;
+      durationMs: number;
+    } = {
       timestamp: new Date().toISOString(),
       reqId: store?.reqId,
       event: 'ERROR',

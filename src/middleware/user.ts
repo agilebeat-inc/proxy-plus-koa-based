@@ -7,7 +7,7 @@ import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
 
 const userHeaderForCN = USER_HEADER_FOR_CN;
 // Import the JS connector
-const { lookupUserByCN } = require('../connectors/userLookup');
+import { lookupUserByCN } from '../connectors/userLookup';
 
 export const userMiddleware: Middleware = async (ctx, next) => {
   const store = asyncLocalStorage.getStore();

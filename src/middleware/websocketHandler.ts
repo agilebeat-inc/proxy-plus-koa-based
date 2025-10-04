@@ -7,9 +7,10 @@ import { WS_TARGET_URL, USER_HEADER_FOR_CN } from '../config/env';
 
 const targetWs = WS_TARGET_URL;
 const userHeaderForCN = USER_HEADER_FOR_CN;
-const { lookupUserByCN } = require('../connectors/userLookup');
-const { runPolicy } = require('../pep/policy-executor');
+import { lookupUserByCN } from '../connectors/userLookup';
+import { runPolicy } from '../pep/policy-executor';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractUserCN(ctx: any): string {
   // Extract common name from header
   const headerKey = userHeaderForCN.toLowerCase();
@@ -21,6 +22,7 @@ function extractUserCN(ctx: any): string {
   return commonName;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function constructRequestContext(ctx: any, commonName: string): Promise<RequestContext> {
   const user = await lookupUserByCN(commonName, ctx.path);
   const store = asyncLocalStorage.getStore();
@@ -80,6 +82,7 @@ function logSocketEventDebug(context: RequestContext, message: string, event: st
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function logSocketEventError(context: RequestContext, error: any, event: string, status?: number) {
   logger.error({
     timestamp: new Date().toISOString(),
@@ -94,9 +97,10 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function websocketHandler(ctx: any) {
   const context = await constructRequestContext(ctx, extractUserCN(ctx));
-  context.isAllowed = await runPolicy(context?.user?.authAttributes, ctx.path) || false;
+  context.isAllowed = await runPolicy(context?.user?.authAttributes ?? '', ctx.path) || false;
 
   // Block connection if not allowed
   if (!context.isAllowed) {
@@ -112,6 +116,7 @@ export async function websocketHandler(ctx: any) {
   logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_CREATE_TARGET', target.readyState);
 
   // Forward messages from client to target
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx.websocket.on('message', (msg: any) => {
     if (target.readyState === WebSocket.OPEN) {
       target.send(msg);
@@ -127,6 +132,7 @@ export async function websocketHandler(ctx: any) {
   });
 
   // Forward messages from target to client
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   target.on('message', (msg: any) => {
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.send(msg);
@@ -160,11 +166,13 @@ export async function websocketHandler(ctx: any) {
   });
 
   // Handle errors
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx.websocket.on('error', (err: any) => {
     logSocketEventError(context, err, 'WS_ERROR_CLIENT');
     target.terminate();
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   target.on('error', (err: any) => {
     logSocketEventError(context, err, 'WS_ERROR_TARGET');
     ctx.websocket.terminate();

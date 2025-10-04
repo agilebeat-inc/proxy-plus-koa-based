@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function executePolicyAgainstAuthAttributes(providedAuthAttributes: string, protectedResource?: string) {
   return false;
 }

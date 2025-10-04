@@ -10,7 +10,7 @@ export async function listPolicys(): Promise<string[]> {
     return files
       .filter(f => f.endsWith('.js') || f.endsWith('.ts'))
       .map(f => path.basename(f, path.extname(f)));
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Failed to list policies:', error);
     return [];
   }
@@ -20,8 +20,8 @@ export async function loadPolicy(policyName: string) {
   try {
     const plugin = await import(`./policies/${policyName}`);
     return plugin;
-  } catch (error) {
-    logger.error(JSON.stringify({ "message": `Failed to load policy '${policyName}'. List of available policies: ${await listPolicys()}` }));
+  } catch (error: unknown) {
+    logger.error(JSON.stringify({ "message": `Failed to load policy '${policyName}'. List of available policies: ${await listPolicys()}, error: ${error instanceof Error ? error.message : String(error)}` }));
     return null;
   }
 }
