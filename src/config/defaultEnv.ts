@@ -4,7 +4,8 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     name: "root",
     route: "/",
     policyName: "mock-always-allow",
-    connectorName: "simple"
+    connectorName: "simple",
+    redirect: "/services"
   },
   {
     name: "Services",

@@ -1,6 +1,5 @@
 import { Middleware } from 'koa';
 import { asyncLocalStorage, RequestContext } from '../localStorage';
-import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
 
 // Import the JS connector
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
