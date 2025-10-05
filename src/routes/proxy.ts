@@ -260,7 +260,7 @@ router.all('/search', async (ctx) => {
 
 router.stack.forEach((route) => {
   if (route.path) {
-    logger.info(`[Registered Route][Methods: ${route.methods.join(', ')}] [Path: ${route.path}]`);
+    logger.debug(`[Registered Route][Methods: ${route.methods.join(', ')}] [Path: ${route.path}]`);
   }
 });
 
