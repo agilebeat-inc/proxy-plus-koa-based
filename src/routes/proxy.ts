@@ -10,6 +10,7 @@ const userHeaderForCN = USER_HEADER_FOR_CN;
 // Import the JS connector
 import { lookupUserByCN } from '../connectors/userLookup';
 import { ParameterizedContext } from 'koa';
+import { extractUserCN } from '../utils/requestContextHelper';
 const router = new Router();
 
 const dynamicRoutes = DYNAMIC_ROUTES;
@@ -158,11 +159,7 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase }) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/no-empty-object-type
 async function determineAndGetUserUsingReqContextAndResource(ctx: ParameterizedContext<any, Router.IRouterParamContext<any, {}>, any>, resourcePath: string): Promise<any> {
-  const headerKey = userHeaderForCN.toLowerCase();
-  const commonNameHeader = ctx.headers[headerKey];
-  const commonName = Array.isArray(commonNameHeader)
-    ? commonNameHeader[0]
-    : commonNameHeader || 'anonymous';
+  const commonName = extractUserCN(ctx);
 
   let user = {};
   if (commonName) {
