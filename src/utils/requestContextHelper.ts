@@ -4,6 +4,7 @@ import { getPolicyName } from '../pep/utils/policyMapper';
 import { lookupUserByCN } from '../connectors/userLookup';
 
 import { USER_HEADER_FOR_CN } from '../config/env';
+import logger from './logger';
 
 export const userHeaderForCN = USER_HEADER_FOR_CN;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -16,6 +17,26 @@ export function extractUserCN(ctx: any): string {
     : commonNameHeader || 'anonymous';
 
   return commonName;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/no-empty-object-type
+export async function determineAndGetUserUsingReqContextAndResource(ctx: any, resourcePath: string): Promise<any> {
+  const commonName = extractUserCN(ctx);
+
+  let user = {};
+  if (commonName) {
+    try {
+      user = await lookupUserByCN(commonName, resourcePath);
+      if (user) {
+        logger.debug(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
+      } else {
+        logger.warn(`No user found for common name ${commonName}`);
+      }
+    } catch (error) {
+      logger.error(`Error looking up user by common name ${commonName}: ${error instanceof Error ? error.stack || error.message : JSON.stringify(error)}`);
+    }
+  }
+  return user;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

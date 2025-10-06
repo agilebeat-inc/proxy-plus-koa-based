@@ -10,7 +10,7 @@ const userHeaderForCN = USER_HEADER_FOR_CN;
 // Import the JS connector
 import { lookupUserByCN } from '../connectors/userLookup';
 import { ParameterizedContext } from 'koa';
-import { extractUserCN } from '../utils/requestContextHelper';
+import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '../utils/requestContextHelper';
 const router = new Router();
 
 const dynamicRoutes = DYNAMIC_ROUTES;
@@ -187,25 +187,7 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect }) => {
   }// end if target
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/no-empty-object-type
-async function determineAndGetUserUsingReqContextAndResource(ctx: ParameterizedContext<any, Router.IRouterParamContext<any, {}>, any>, resourcePath: string): Promise<any> {
-  const commonName = extractUserCN(ctx);
 
-  let user = {};
-  if (commonName) {
-    try {
-      user = await lookupUserByCN(commonName, resourcePath);
-      if (user) {
-        logger.debug(`User found for common name ${commonName}: ${JSON.stringify(user)}`);
-      } else {
-        logger.warn(`No user found for common name ${commonName}`);
-      }
-    } catch (error) {
-      logger.error(`Error looking up user by common name ${commonName}: ${error instanceof Error ? error.stack || error.message : JSON.stringify(error)}`);
-    }
-  }
-  return user;
-}
 
 router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
   ctx.type = 'html';
