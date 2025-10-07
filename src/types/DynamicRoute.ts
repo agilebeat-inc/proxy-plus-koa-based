@@ -2,8 +2,18 @@ export interface DynamicRoute {
   name: string;
   route: string;
   target: string;
-  redirect?: string;
   rewritebase?: boolean;
+  redirect?: string | {
+    default: string;
+    conditionalRedirects?: Array<{
+      condition: string;
+      headerName: string;
+      includes: string;
+      redirect: string;
+    }>;
+  };
+  splashPage?: boolean;
+  relativeFilePath?: string;
   params?: string;
   policyName?: string;
   connectorName?: string;
