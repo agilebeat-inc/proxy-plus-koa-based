@@ -11,7 +11,6 @@
     "start": "node dist/app.js",
     "dev": "nodemon --watch src --exec ts-node src/app.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint . --ext .js,.ts",
     "format": "prettier --write ."
   },
   "keywords": [],
