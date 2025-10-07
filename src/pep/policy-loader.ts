@@ -11,7 +11,7 @@ export async function listPolicys(): Promise<string[]> {
       .filter(f => f.endsWith('.js') || f.endsWith('.ts'))
       .map(f => path.basename(f, path.extname(f)));
   } catch (error: unknown) {
-    logger.error('Failed to list policies:', error);
+    logger.error(JSON.stringify({ "message": `Failed to list policies: ${error instanceof Error ? error.message : String(error)}` }));
     return [];
   }
 }
