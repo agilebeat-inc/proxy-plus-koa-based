@@ -1,7 +1,7 @@
 import { DynamicRoute } from '../types/DynamicRoute';
 import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
-import { DEFAULT_SERVICES_HTML, DEFAULT_UPSTREAM_ERROR_MSG, DEFAULT_DYNAMIC_ROUTES, DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX, DEFAULT_ACCESS_DENY_ERROR_MSG, DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX } from './defaultEnv';
+import { DEFAULT_INJECTED_BOLT_PRINCIPAL, DEFAULT_INJECTED_BOLT_SCHEME, DEFAULT_SERVICES_HTML, DEFAULT_UPSTREAM_ERROR_MSG, DEFAULT_DYNAMIC_ROUTES, DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX, DEFAULT_ACCESS_DENY_ERROR_MSG, DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX } from './defaultEnv';
 // Centralized environment variable initialization
 export const POLICY_NAME = getEnvVar('POLICY_NAME', 'mock-always-allow');
 export const CONNECTOR_PLUGIN_NAME = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
@@ -13,6 +13,19 @@ export const SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_S
 export const ACCESS_DENY_ERROR_MSG = getEnvVar('ACCESS_DENY_ERROR_MSG', DEFAULT_ACCESS_DENY_ERROR_MSG);
 export const IGNORE_URLS_FOR_LOGGING_BY_PREFIX = getEnvVar('IGNORE_URLS_FOR_LOGGING_BY_PREFIX', DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX);
 export const DYNAMIC_ROUTES_INVENTORY_PREFIX = getEnvVar('DYNAMIC_ROUTES_INVENTORY_PREFIX', DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX);
+export const INJECTED_BOLT_PRINCIPAL = getEnvVar('INJECTED_BOLT_PRINCIPAL', DEFAULT_INJECTED_BOLT_PRINCIPAL);
+
+const DEFAULT_INJECTED_BOLT_CREDENTIALS = 'my-password';
+function getInjectedBoltCredentials(): string {
+  const value = process.env.INJECTED_BOLT_CREDENTIALS;
+  if (!value) {
+    logger.warn('[Environment] Authentication injection will not work because user credential is not configured.');
+    return DEFAULT_INJECTED_BOLT_CREDENTIALS;
+  }
+  return value;
+}
+export const INJECTED_BOLT_CREDENTIALS = getInjectedBoltCredentials();
+export const INJECTED_BOLT_SCHEME = getEnvVar('INJECTED_BOLT_SCHEME', DEFAULT_INJECTED_BOLT_SCHEME);
 
 function getDynamicRoutes(drString: string): DynamicRoute[] {
   let dynamicRoutes: DynamicRoute[] = [];

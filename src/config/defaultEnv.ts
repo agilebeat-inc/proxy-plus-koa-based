@@ -1,4 +1,6 @@
 export const DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX = '/services'
+export const DEFAULT_INJECTED_BOLT_PRINCIPAL = 'neo4j';
+export const DEFAULT_INJECTED_BOLT_SCHEME = 'basic';
 export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
     name: "root",

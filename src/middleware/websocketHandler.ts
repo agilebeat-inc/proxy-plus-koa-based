@@ -1,14 +1,210 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
-import { asyncLocalStorage, RequestContext } from '../localStorage';
-import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
-import { getPolicyName } from '../pep/utils/policyMapper';
-import { WS_TARGET_URL  } from '../config/env';
+import { RequestContext } from '../localStorage';
+import { INJECTED_BOLT_CREDENTIALS, INJECTED_BOLT_PRINCIPAL, INJECTED_BOLT_SCHEME, WS_TARGET_URL } from '../config/env';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
 
 const targetWs = WS_TARGET_URL;
-import { lookupUserByCN } from '../connectors/userLookup';
 import { runPolicy } from '../pep/policy-executor';
+
+type PackValue = string | number | boolean | null | Buffer | PackValue[] | { [key: string]: PackValue };
+
+function injectAuthIntoBoltBuffer(buffer: Buffer): Buffer | null {
+  let offset = 0;
+  let prefix: Buffer | null = null;
+  if (buffer.length >= 20 && buffer.readUInt32BE(0) === 0x6060b017) {
+    prefix = buffer.subarray(0, 20);
+    offset = 20;
+  }
+
+  const messages: Buffer[] = [];
+  let chunks: Buffer[] = [];
+  let changed = false;
+
+  while (offset + 2 <= buffer.length) {
+    const size = buffer.readUInt16BE(offset);
+    offset += 2;
+    if (size === 0) {
+      if (chunks.length) {
+        const message = Buffer.concat(chunks);
+        const replaced = replaceAuthInBoltMessage(message);
+        messages.push(replaced ?? message);
+        if (replaced) {
+          changed = true;
+        }
+        chunks = [];
+      }
+      continue;
+    }
+    if (offset + size > buffer.length) {
+      break;
+    }
+    chunks.push(buffer.subarray(offset, offset + size));
+    offset += size;
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  const framedMessages = messages.map(frameBoltMessage);
+  const body = Buffer.concat(framedMessages);
+  return prefix ? Buffer.concat([prefix, body]) : body;
+}
+
+function replaceAuthInBoltMessage(message: Buffer): Buffer | null {
+  if (message.length < 2) {
+    return null;
+  }
+  const marker = message[0];
+  const signature = message[1];
+  if ((marker & 0xf0) !== 0xb0 || signature !== 0x6a || (marker & 0x0f) !== 1) {
+    return null;
+  }
+
+  const authMap: { [key: string]: PackValue } = {
+    scheme: INJECTED_BOLT_SCHEME,
+    principal: INJECTED_BOLT_PRINCIPAL,
+    credentials: INJECTED_BOLT_CREDENTIALS
+  };
+
+  return encodeStruct(0x6a, [authMap]);
+}
+
+function frameBoltMessage(message: Buffer): Buffer {
+  const sizeBuffer = Buffer.alloc(2);
+  sizeBuffer.writeUInt16BE(message.length, 0);
+  return Buffer.concat([sizeBuffer, message, Buffer.alloc(2)]);
+}
+
+function encodeStruct(signature: number, fields: PackValue[]): Buffer {
+  const marker = 0xb0 + fields.length;
+  const fieldBuffers = fields.map(encodeValue);
+  return Buffer.concat([Buffer.from([marker, signature]), ...fieldBuffers]);
+}
+
+function encodeValue(value: PackValue): Buffer {
+  if (value === null) {
+    return Buffer.from([0xc0]);
+  }
+  if (typeof value === 'string') {
+    return encodeString(value);
+  }
+  if (typeof value === 'boolean') {
+    return Buffer.from([value ? 0xc3 : 0xc2]);
+  }
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return encodeInteger(value);
+  }
+  if (Buffer.isBuffer(value)) {
+    return encodeBytes(value);
+  }
+  if (Array.isArray(value)) {
+    return encodeList(value);
+  }
+  if (value && typeof value === 'object') {
+    return encodeMap(value as { [key: string]: PackValue });
+  }
+  return Buffer.from([0xc0]);
+}
+
+function encodeString(value: string): Buffer {
+  const payload = Buffer.from(value, 'utf8');
+  const length = payload.length;
+  if (length < 16) {
+    return Buffer.concat([Buffer.from([0x80 + length]), payload]);
+  }
+  if (length < 256) {
+    return Buffer.concat([Buffer.from([0xd0, length]), payload]);
+  }
+  if (length < 65536) {
+    const size = Buffer.alloc(2);
+    size.writeUInt16BE(length, 0);
+    return Buffer.concat([Buffer.from([0xd1]), size, payload]);
+  }
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(length, 0);
+  return Buffer.concat([Buffer.from([0xd2]), size, payload]);
+}
+
+function encodeInteger(value: number): Buffer {
+  if (value >= -16 && value <= 127) {
+    return Buffer.from([value & 0xff]);
+  }
+  if (value >= -128 && value <= 127) {
+    return Buffer.from([0xc8, value & 0xff]);
+  }
+  if (value >= -32768 && value <= 32767) {
+    const buffer = Buffer.alloc(3);
+    buffer[0] = 0xc9;
+    buffer.writeInt16BE(value, 1);
+    return buffer;
+  }
+  if (value >= -2147483648 && value <= 2147483647) {
+    const buffer = Buffer.alloc(5);
+    buffer[0] = 0xca;
+    buffer.writeInt32BE(value, 1);
+    return buffer;
+  }
+  const buffer = Buffer.alloc(9);
+  buffer[0] = 0xcb;
+  buffer.writeBigInt64BE(BigInt(value), 1);
+  return buffer;
+}
+
+function encodeBytes(value: Buffer): Buffer {
+  const length = value.length;
+  if (length < 256) {
+    return Buffer.concat([Buffer.from([0xcc, length]), value]);
+  }
+  if (length < 65536) {
+    const size = Buffer.alloc(2);
+    size.writeUInt16BE(length, 0);
+    return Buffer.concat([Buffer.from([0xcd]), size, value]);
+  }
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(length, 0);
+  return Buffer.concat([Buffer.from([0xce]), size, value]);
+}
+
+function encodeList(value: PackValue[]): Buffer {
+  const length = value.length;
+  const payload = Buffer.concat(value.map(encodeValue));
+  if (length < 16) {
+    return Buffer.concat([Buffer.from([0x90 + length]), payload]);
+  }
+  if (length < 256) {
+    return Buffer.concat([Buffer.from([0xd4, length]), payload]);
+  }
+  if (length < 65536) {
+    const size = Buffer.alloc(2);
+    size.writeUInt16BE(length, 0);
+    return Buffer.concat([Buffer.from([0xd5]), size, payload]);
+  }
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(length, 0);
+  return Buffer.concat([Buffer.from([0xd6]), size, payload]);
+}
+
+function encodeMap(value: { [key: string]: PackValue }): Buffer {
+  const entries = Object.entries(value);
+  const payload = Buffer.concat(entries.flatMap(([key, entryValue]) => [encodeString(key), encodeValue(entryValue)]));
+  const length = entries.length;
+  if (length < 16) {
+    return Buffer.concat([Buffer.from([0xa0 + length]), payload]);
+  }
+  if (length < 256) {
+    return Buffer.concat([Buffer.from([0xd8, length]), payload]);
+  }
+  if (length < 65536) {
+    const size = Buffer.alloc(2);
+    size.writeUInt16BE(length, 0);
+    return Buffer.concat([Buffer.from([0xd9]), size, payload]);
+  }
+  const size = Buffer.alloc(4);
+  size.writeUInt32BE(length, 0);
+  return Buffer.concat([Buffer.from([0xda]), size, payload]);
+}
 
 function logSocketEventInfo(context: RequestContext, message: string, event: string, status?: number) {
   logger.info({
@@ -55,6 +251,7 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 export async function websocketHandler(ctx: any) {
   const context = await constructRequestContext(ctx, extractUserCN(ctx));
   context.isAllowed = await runPolicy(context?.user?.authAttributes ?? '', ctx.path) || false;
+  let boltAuthLogged = false;
 
   // Block connection if not allowed
   if (!context.isAllowed) {
@@ -72,16 +269,31 @@ export async function websocketHandler(ctx: any) {
   // Forward messages from client to target
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx.websocket.on('message', (msg: any) => {
+    let outboundMsg = msg;
+    let injected = false;
+    if (Buffer.isBuffer(msg)) {
+      const injectedBuffer = injectAuthIntoBoltBuffer(msg);
+      if (injectedBuffer) {
+        outboundMsg = injectedBuffer;
+        injected = true;
+      }
+    }
+    if (injected && !boltAuthLogged) {
+      boltAuthLogged = true;
+      const assumedUser = context.user?.cn ?? context.user?.name ?? 'unknown';
+      const authMessage = `Bolt auth injected scheme=${INJECTED_BOLT_SCHEME} principal=${INJECTED_BOLT_PRINCIPAL} credentials=present onBehalf=${assumedUser}`;
+      logSocketEventInfo(context, authMessage, 'WS_BOLT_AUTH');
+    }
     if (target.readyState === WebSocket.OPEN) {
-      target.send(msg);
+      target.send(outboundMsg);
     } else {
-      target.once('open', () => target.send(msg));
+      target.once('open', () => target.send(outboundMsg));
       logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
     }
-    if (Buffer.isBuffer(msg)) {
-      logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
-    } else if (typeof msg === 'string') {
-      logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+    if (Buffer.isBuffer(outboundMsg)) {
+      logSocketEventDebug(context, outboundMsg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
+    } else if (typeof outboundMsg === 'string') {
+      logSocketEventDebug(context, outboundMsg, 'WS_MESSAGE_TO_TARGET', target.readyState);
     }
   });
 
