@@ -4,7 +4,7 @@ import http, { RequestOptions, IncomingMessage } from 'http';
 import https from 'https';
 import { URL } from 'url';
 import logger from '../utils/logger';
-import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX, USER_HEADER_FOR_CN } from '../config/env' 
+import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX, USER_HEADER_FOR_CN, NEO4J_BROWSER_MANIFEST } from '../config/env' 
 import { runPolicy } from '../pep/policy-executor';
 import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '../utils/requestContextHelper';
 import fs from 'fs';
@@ -13,6 +13,9 @@ import path from 'path';
 const router = new Router();
 
 const dynamicRoutes = DYNAMIC_ROUTES;
+const conditionalReturnValues: Record<string, string> = {
+  NEO4J_BROWSER_MANIFEST
+};
 
 if (dynamicRoutes.length === 0) {
   logger.warn('No dynamic routes configured. Please set the DYNAMIC_ROUTES environment variable.');
@@ -31,7 +34,8 @@ function registerRedirectRoute({
           condition: string;
           headerName: string;
           includes: string;
-          redirect: string;
+          redirect?: string;
+          return?: string;
         }>;
       };
 }) {
@@ -46,6 +50,7 @@ function registerRedirectRoute({
     }
 
     let targetRedirect: string;
+    let responseBody: string | null = null;
 
     // Support redirect as a string or as an object with conditional redirects
     if (typeof redirect === "string") {
@@ -64,7 +69,11 @@ function registerRedirectRoute({
           ) {
             const headerValue = ctx.headers[cond.headerName.toLowerCase()];
             if (headerValue && headerValue.includes(cond.includes)) {
-              targetRedirect = cond.redirect;
+              if (cond.return) {
+                responseBody = conditionalReturnValues[cond.return] ?? '';
+              } else if (cond.redirect) {
+                targetRedirect = cond.redirect;
+              }
               break;
             }
           }
@@ -72,13 +81,64 @@ function registerRedirectRoute({
       }
     }
 
+    if (responseBody !== null) {
+      ctx.type = 'application/json';
+      ctx.body = responseBody;
+      return;
+    }
+
     ctx.redirect(`${targetRedirect}${ctx.search || ""}`);
   });
 }
 
-function registerProxiedRoute({ name, route, target, rewritebase }: { name: string; route: string; target: string; rewritebase?: boolean }) {
+function registerProxiedRoute({
+  name,
+  route,
+  target,
+  rewritebase,
+  conditionalReturns,
+  subpathReturns
+}: {
+  name: string;
+  route: string;
+  target: string;
+  rewritebase?: boolean;
+  conditionalReturns?: Array<{
+    condition: string;
+    headerName: string;
+    includes: string;
+    return: string;
+  }>;
+  subpathReturns?: Array<{
+    path: string;
+    return: string;
+  }>;
+}) {
       router.all(route, async (ctx) => {
       try {
+        if (subpathReturns && Array.isArray(subpathReturns)) {
+          for (const subpath of subpathReturns) {
+            if (ctx.path.startsWith(subpath.path)) {
+              const responseBody = conditionalReturnValues[subpath.return] ?? '';
+              ctx.type = 'application/json';
+              ctx.body = responseBody;
+              return;
+            }
+          }
+        }
+        if (conditionalReturns && Array.isArray(conditionalReturns)) {
+          for (const cond of conditionalReturns) {
+            if (cond.condition === 'header' && cond.headerName && cond.includes) {
+              const headerValue = ctx.headers[cond.headerName.toLowerCase()];
+              if (headerValue && headerValue.includes(cond.includes)) {
+                const responseBody = conditionalReturnValues[cond.return] ?? '';
+                ctx.type = 'application/json';
+                ctx.body = responseBody;
+                return;
+              }
+            }
+          }
+        }
         await new Promise<void>((resolve, reject) => {
           const prefixForRoute = route.replace(/\(.*\)$/, '');
           const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
@@ -283,7 +343,7 @@ function registerStaticFileRoute({ route, relativeFilePath }: { route: string; r
   });
 }
 
-dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage, relativeFilePath }) => {
+dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns }) => {
   if (redirect) {
     registerRedirectRoute({ route, redirect });
     return;
@@ -293,7 +353,7 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage,
     registerStaticFileRoute({ route, relativeFilePath });
     return;
   } else if (target) {
-    registerProxiedRoute({ name, route, target, rewritebase });
+    registerProxiedRoute({ name, route, target, rewritebase, conditionalReturns, subpathReturns });
     return;
   } else {
     logger.debug(`Ignoring route '${name}' in setting up dynamic routes because it is missing a target.`);

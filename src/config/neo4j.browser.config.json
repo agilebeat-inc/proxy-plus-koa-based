@@ -1,8 +1,0 @@
-{
-    "type": "neo4j",
-    "database": "neo4j",
-    "username": "neo4j",
-    "password": "password",
-    "host": "localhost",
-    "port": 7687
-}

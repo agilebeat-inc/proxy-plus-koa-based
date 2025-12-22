@@ -9,9 +9,20 @@ export interface DynamicRoute {
       condition: string;
       headerName: string;
       includes: string;
-      redirect: string;
+      redirect?: string;
+      return?: string;
     }>;
   };
+  conditionalReturns?: Array<{
+    condition: string;
+    headerName: string;
+    includes: string;
+    return: string;
+  }>;
+  subpathReturns?: Array<{
+    path: string;
+    return: string;
+  }>;
   splashPage?: boolean;
   relativeFilePath?: string;
   params?: string;
