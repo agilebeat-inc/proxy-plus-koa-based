@@ -8,6 +8,42 @@ const targetWs = WS_TARGET_URL;
 import { runPolicy } from '../pep/policy-executor';
 
 type PackValue = string | number | boolean | null | Buffer | PackValue[] | { [key: string]: PackValue };
+type BoltStruct = { signature: number; fields: PackValue[] };
+type RunMessage = { query: string; params: PackValue };
+
+type PackstreamDecoder = {
+  unpacker: {
+    unpack: (buffer: { remaining: () => number }, hydrateStructure?: (structure: unknown) => unknown) => unknown;
+  };
+  Structure: new (signature: number, fields: PackValue[]) => { signature: number; fields: PackValue[] };
+  ChannelBuffer: new (buffer: Buffer) => { remaining: () => number };
+};
+
+let packstreamDecoder: PackstreamDecoder | null = null;
+
+function getPackstreamDecoder(): PackstreamDecoder {
+  if (packstreamDecoder) {
+    return packstreamDecoder;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packstream = require('neo4j-driver-bolt-connection/lib/packstream/packstream-v1');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const structure = require('neo4j-driver-bolt-connection/lib/packstream/structure');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const channelBuf = require('neo4j-driver-bolt-connection/lib/channel/channel-buf');
+  const Unpacker = packstream.Unpacker ?? packstream.default?.Unpacker;
+  const Structure = structure.Structure ?? structure.default;
+  const ChannelBuffer = channelBuf.default;
+  if (!Unpacker || !Structure || !ChannelBuffer) {
+    throw new Error('Neo4j PackStream decoder is unavailable.');
+  }
+  packstreamDecoder = {
+    unpacker: new Unpacker(true),
+    Structure,
+    ChannelBuffer
+  };
+  return packstreamDecoder;
+}
 
 function injectAuthIntoBoltBuffer(buffer: Buffer): Buffer | null {
   let offset = 0;
@@ -206,6 +242,85 @@ function encodeMap(value: { [key: string]: PackValue }): Buffer {
   return Buffer.concat([Buffer.from([0xda]), size, payload]);
 }
 
+function decodeStruct(buffer: Buffer): BoltStruct | null {
+  try {
+    const { unpacker, Structure, ChannelBuffer } = getPackstreamDecoder();
+    const wrapped = new ChannelBuffer(buffer);
+    const value = unpacker.unpack(wrapped);
+    if (!(value instanceof Structure)) {
+      return null;
+    }
+    if (wrapped.remaining() !== 0) {
+      return null;
+    }
+    return { signature: value.signature, fields: value.fields };
+  } catch {
+    return null;
+  }
+}
+
+function splitBoltMessages(buffer: Buffer): Buffer[] {
+  let offset = 0;
+  if (buffer.length >= 20 && buffer.readUInt32BE(0) === 0x6060b017) {
+    offset = 20;
+  }
+  const messages: Buffer[] = [];
+  let chunks: Buffer[] = [];
+  let sawTerminator = false;
+  while (offset + 2 <= buffer.length) {
+    const size = buffer.readUInt16BE(offset);
+    offset += 2;
+    if (size === 0) {
+      if (chunks.length) {
+        messages.push(Buffer.concat(chunks));
+        chunks = [];
+      }
+      sawTerminator = true;
+      continue;
+    }
+    if (offset + size > buffer.length) {
+      return [];
+    }
+    chunks.push(buffer.subarray(offset, offset + size));
+    offset += size;
+  }
+  if (chunks.length || (!sawTerminator && messages.length)) {
+    return [];
+  }
+  return messages;
+}
+
+export function extractRunMessages(buffer: Buffer): RunMessage[] {
+  const messages = splitBoltMessages(buffer);
+  const runs: RunMessage[] = [];
+  for (const message of messages) {
+    const struct = decodeStruct(message);
+    if (!struct || struct.signature !== 0x10 || struct.fields.length < 2) {
+      continue;
+    }
+    const query = struct.fields[0];
+    if (typeof query !== 'string') {
+      continue;
+    }
+    runs.push({ query, params: struct.fields[1] });
+  }
+  return runs;
+}
+
+function sanitizePackValue(value: PackValue): unknown {
+  if (Buffer.isBuffer(value)) {
+    return value.toString('hex');
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizePackValue(item));
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as { [key: string]: PackValue });
+    return Object.fromEntries(entries.map(([key, entryValue]) => [key, sanitizePackValue(entryValue)]));
+  }
+  return value;
+}
+
 function logSocketEventInfo(context: RequestContext, message: string, event: string, status?: number) {
   logger.info({
     timestamp: new Date().toISOString(),
@@ -272,6 +387,15 @@ export async function websocketHandler(ctx: any) {
     let outboundMsg = msg;
     let injected = false;
     if (Buffer.isBuffer(msg)) {
+      const runs = extractRunMessages(msg);
+      for (const run of runs) {
+        const sanitizedParams = sanitizePackValue(run.params);
+        logSocketEventInfo(
+          context,
+          JSON.stringify({ query: run.query, params: sanitizedParams }),
+          'WS_BOLT_RUN_QUERY'
+        );
+      }
       const injectedBuffer = injectAuthIntoBoltBuffer(msg);
       if (injectedBuffer) {
         outboundMsg = injectedBuffer;

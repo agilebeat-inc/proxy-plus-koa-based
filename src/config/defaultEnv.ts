@@ -21,7 +21,6 @@ export const DEFAULT_NEO4J_BROWSER_MANIFEST = `{
   "version": "5.24.0",
   "builtAt": "2024-09-02T12:18:54.860Z",
   "buildNumber": "225"
-  "initialCommand": "MATCH (n) RETURN n LIMIT 25"
 }`;
 export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
@@ -73,7 +72,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
     name: "Browser",
     route: "/analytics/(.*)",
-    target: "http://10.29.1.86:3001",
+    target: "http://10.29.1.166:3001",
     rewritebase: true,
     policyName: "mock-always-allow",
     connectorName: "simple",
@@ -82,7 +81,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
     name: "Link Analytics",
     route: "/browser/(.*)",
-    target: "http://10.29.1.86:7474/browser/",
+    target: "http://10.29.1.166:7474/browser/",
     policyName: "mock-always-allow",
     connectorName: "mock",
     subpathReturns: [
