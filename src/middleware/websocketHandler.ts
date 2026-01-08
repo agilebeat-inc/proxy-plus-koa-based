@@ -7,6 +7,8 @@ import { constructRequestContext, extractUserCN } from '../utils/requestContextH
 const targetWs = WS_TARGET_URL;
 import { runPolicy } from '../pep/policy-executor';
 
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
 type PackValue = string | number | boolean | null | Buffer | PackValue[] | { [key: string]: PackValue };
 type BoltStruct = { signature: number; fields: PackValue[] };
 type RunMessage = { query: string; params: PackValue };
