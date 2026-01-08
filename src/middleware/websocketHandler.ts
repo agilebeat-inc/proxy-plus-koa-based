@@ -364,37 +364,84 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function websocketHandler(ctx: any) {
-  const context = await constructRequestContext(ctx, extractUserCN(ctx));
-  context.isAllowed = await runPolicy(context?.user?.authAttributes ?? '', ctx.path) || false;
+  const userCN = extractUserCN(ctx);
+  let context: RequestContext | null = null;
+  let isContextResolved = false;
+  const contextPromise = (async () => {
+    context = await constructRequestContext(ctx, userCN);
+    context.isAllowed = (await runPolicy(context?.user?.authAttributes ?? '', ctx.path ?? '')) || false;
+    isContextResolved = true;
+    return context.isAllowed;
+  })();
+
+  const getContext = async (): Promise<RequestContext | null> => {
+    if (isContextResolved) {
+      return context;
+    }
+    await contextPromise;
+    return context;
+  };
+
+  const getIsAllowed = async (): Promise<boolean> => {
+    if (!isContextResolved) {
+      await getContext();
+    }
+    return context?.isAllowed ?? false;
+  };
+
   let boltAuthLogged = false;
 
-  // Block connection if not allowed
-  if (!context.isAllowed) {
-    if (ctx.websocket.readyState === WebSocket.OPEN) {
-      ctx.websocket.close();
-      logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_CLOSE_TRIGGERED_BY_POLICY', 403);
-      return;
-    }
-    logSocketEventInfo(context, `WebSocket connection denied by policy ${context.policyName}`, 'WS_IGNORE_TRIGGERED_BY_POLICY', 403);
-    return;
-  }
   const target = new WebSocket(targetWs);
-  logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_CREATE_TARGET', target.readyState);
+
+  contextPromise
+    .then(isAllowed => {
+      if (!isAllowed) {
+        if (ctx.websocket.readyState === WebSocket.OPEN && context) {
+          ctx.websocket.close();
+          logSocketEventInfo(
+            context,
+            `WebSocket connection denied by policy ${context.policyName}`,
+            'WS_CLOSE_TRIGGERED_BY_POLICY',
+            403
+          );
+        }
+        if (target.readyState === WebSocket.OPEN || target.readyState === WebSocket.CONNECTING) {
+          target.terminate();
+        }
+      }
+    })
+    .catch(err => {
+      logger.error('Error in context resolution:', err);
+    });
 
   // Forward messages from client to target
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx.websocket.on('message', (msg: any) => {
+  ctx.websocket.on('message', async (msg: any) => {
+    const isAllowed = await getIsAllowed();
+    if (!isAllowed) {
+      if (context) {
+        logSocketEventInfo(context, 'Message blocked - not authorized', 'WS_MESSAGE_BLOCKED', target.readyState);
+      }
+      if (ctx.websocket.readyState === WebSocket.OPEN) {
+        ctx.websocket.close();
+      }
+      target.terminate();
+      return;
+    }
+
     let outboundMsg = msg;
     let injected = false;
     if (Buffer.isBuffer(msg)) {
       const runs = extractRunMessages(msg);
       for (const run of runs) {
         const sanitizedParams = sanitizePackValue(run.params);
-        logSocketEventInfo(
-          context,
-          JSON.stringify({ query: run.query, params: sanitizedParams }),
-          'WS_BOLT_RUN_QUERY'
-        );
+        if (context) {
+          logSocketEventInfo(
+            context,
+            JSON.stringify({ query: run.query, params: sanitizedParams }),
+            'WS_BOLT_RUN_QUERY'
+          );
+        }
       }
       const injectedBuffer = injectAuthIntoBoltBuffer(msg);
       if (injectedBuffer) {
@@ -404,66 +451,93 @@ export async function websocketHandler(ctx: any) {
     }
     if (injected && !boltAuthLogged) {
       boltAuthLogged = true;
-      const assumedUser = context.user?.cn ?? context.user?.name ?? 'unknown';
+      const assumedUser = context?.user?.cn ?? context?.user?.name ?? 'unknown';
       const authMessage = `Bolt auth injected scheme=${INJECTED_BOLT_SCHEME} principal=${INJECTED_BOLT_PRINCIPAL} credentials=present onBehalf=${assumedUser}`;
-      logSocketEventInfo(context, authMessage, 'WS_BOLT_AUTH');
+      if (context) {
+        logSocketEventInfo(context, authMessage, 'WS_BOLT_AUTH');
+      }
     }
     if (target.readyState === WebSocket.OPEN) {
       target.send(outboundMsg);
     } else {
       target.once('open', () => target.send(outboundMsg));
-      logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
+      if (context) {
+        logSocketEventInfo(context, `WebSocket target has been created ${context.policyName}`, 'WS_OPEN_TARGET', target.readyState);
+      }
     }
-    if (Buffer.isBuffer(outboundMsg)) {
-      logSocketEventDebug(context, outboundMsg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
-    } else if (typeof outboundMsg === 'string') {
-      logSocketEventDebug(context, outboundMsg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+    if (context) {
+      if (Buffer.isBuffer(outboundMsg)) {
+        logSocketEventDebug(context, outboundMsg.toString('hex'), 'WS_MESSAGE_TO_TARGET', target.readyState);
+      } else if (typeof outboundMsg === 'string') {
+        logSocketEventDebug(context, outboundMsg, 'WS_MESSAGE_TO_TARGET', target.readyState);
+      }
     }
   });
 
   // Forward messages from target to client
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  target.on('message', (msg: any) => {
+  target.on('message', async (msg: any) => {
+    await getContext();
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.send(msg);
     }
-    if (Buffer.isBuffer(msg)) {
-      logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
-    } else if (typeof msg === 'string') {
-      logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
+    if (context) {
+      if (Buffer.isBuffer(msg)) {
+        logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
+      } else if (typeof msg === 'string') {
+        logSocketEventDebug(context, msg, 'WS_MESSAGE_TO_CLIENT', target.readyState);
+      }
     }
   });
 
   // Handle open events
-  ctx.websocket.on('open', () => {
-    logSocketEventInfo(context, 'Opened client WebSocket event', 'WS_OPEN_CLIENT', ctx.websocket.readyState);
+  ctx.websocket.on('open', async () => {
+    await getContext();
+    if (context) {
+      logSocketEventInfo(context, 'Opened client WebSocket event', 'WS_OPEN_CLIENT', ctx.websocket.readyState);
+    }
   });
 
-  target.on('open', () => {
-    logSocketEventInfo(context, 'Opened target WebSocket event', 'WS_OPEN_TARGET', target.readyState);
+  target.on('open', async () => {
+    await getContext();
+    if (context) {
+      logSocketEventInfo(context, 'Opened target WebSocket event', 'WS_OPEN_TARGET', target.readyState);
+    }
   });
 
   // Handle close events
-  ctx.websocket.on('close', () => {
-    logSocketEventInfo(context, 'Closed client WebSocket event', 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
+  ctx.websocket.on('close', async () => {
+    await getContext();
+    if (context) {
+      logSocketEventInfo(context, 'Closed client WebSocket event', 'WS_CLOSE_CLIENT', ctx.websocket.readyState);
+    }
     target.close();
   });
 
-  target.on('close', () => {
-    logSocketEventInfo(context, 'Closed target WebSocket event', 'WS_CLOSE_TARGET', target.readyState);
+  target.on('close', async () => {
+    await getContext();
+    if (context) {
+      logSocketEventInfo(context, 'Closed target WebSocket event', 'WS_CLOSE_TARGET', target.readyState);
+    }
     ctx.websocket.close();
   });
 
   // Handle errors
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx.websocket.on('error', (err: any) => {
-    logSocketEventError(context, err, 'WS_ERROR_CLIENT');
+  ctx.websocket.on('error', async (err: any) => {
+    await getContext();
+    if (context) {
+      logSocketEventError(context, err, 'WS_ERROR_CLIENT');
+    }
     target.terminate();
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  target.on('error', (err: any) => {
-    logSocketEventError(context, err, 'WS_ERROR_TARGET');
+  target.on('error', async (err: any) => {
+    await getContext();
+    if (context) {
+      logSocketEventError(context, err, 'WS_ERROR_TARGET');
+    }
     ctx.websocket.terminate();
   });
 }
