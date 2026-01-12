@@ -160,3 +160,8 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
 
 MIT
 
+---
+
+In order to work with neo4j authentication for read-only databases use following URL structure:
+
+```http://localhost:3000/browser/?connectURL=bolt%3A%2F%2Flocalhost%3A3000&preselectAuthMethod=NO_AUTH&cmd=:play&arg=movies```
