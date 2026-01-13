@@ -70,7 +70,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     connectorName: "simple"
   },
   {
-    name: "Browser",
+    name: "Data Browser",
     route: "/analytics/(.*)",
     target: "http://10.29.1.166:3001",
     rewritebase: true,
@@ -79,7 +79,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     icon: '<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"> <path stroke="none" d="M0 0h24v24H0z" fill="none"></path> <circle cx="12" cy="12" r="9"></circle> <line x1="4.6" y1="7" x2="19.4" y2="7"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="4.6" y1="17" x2="19.4" y2="17"></line> </svg>',
   },
   {
-    name: "Link Analytics",
+    name: "Link Browser",
     route: "/browser/(.*)",
     target: "http://10.29.1.166:7474/browser/",
     policyName: "mock-always-allow",
@@ -96,7 +96,8 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     rewritebase: true,
     policyName: "mock-always-deny",
     connectorName: "mock",
-    hideIfNoAccess: false
+    hideIfNoAccess: false,
+    doNotRenderButton: true,
   },
   {
     name: "Button Rendered But Not Active With An Icon",

@@ -285,7 +285,12 @@ function registerSplashPageRoute({ name, route }: { name: string; route: string 
     const buttons = (
       await Promise.all(dynamicRoutes.map(async r => {
         if (!r.target) {
-          logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because it is missing a target (value: ${r.target}) or hideIfNoAccess (actual value: ${r.hideIfNoAccess}) is true.`);
+          logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because it is missing a target (value: ${r.target})`);
+          return '';
+        }
+        // Default behavior: render the button unless explicitly disabled in config.
+        if (r?.doNotRenderButton === true) {
+          logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because doNotRenderButton = true.`);
           return '';
         }
         const href = r.route.replace(/\(\.\*\)$/, '');
@@ -299,21 +304,22 @@ function registerSplashPageRoute({ name, route }: { name: string; route: string 
         const isAllowed = await runPolicy(user?.authAttributes ?? '', r.route) || false;
         logger.debug(`While rendering button, for a given route: ${r.route} following user was determined ${JSON.stringify(user)}. The decsion isAllowed: ${isAllowed}`);
 
-        // If not allowed, render as inactive button (not clickable, visually disabled)
-        if (!r?.hideIfNoAccess) {
-          if (!isAllowed) {
-            if (r.icon) {
-              return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
-            }
-            return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
+        if (!isAllowed) {
+          if (r?.hideIfNoAccess) {
+            logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because hideIfNoAccess = ${r.hideIfNoAccess}.`);
+            return '';
           }
-        
-          // Allowed: render as normal clickable button
           if (r.icon) {
-            return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
+            return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
           }
-          return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
+          return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
         }
+
+        // Allowed: render as normal clickable button
+        if (r.icon) {
+          return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
+        }
+        return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
       }))
     ).join('\n');
     ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);

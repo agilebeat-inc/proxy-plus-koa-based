@@ -1,4 +1,5 @@
 export interface DynamicRoute {
+  doNotRenderButton: boolean | undefined;
   name: string;
   route: string;
   target: string;
