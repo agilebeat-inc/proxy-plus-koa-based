@@ -156,6 +156,15 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
 
 ---
 
+## Security Scanning (Trivy)
+
+This repo includes a GitHub Actions workflow that runs Trivy on every PR and on pushes to `main`, and uploads results to GitHub Code Scanning:
+
+- Workflow: `.github/workflows/trivy.yml`
+- Output: `trivy.sarif` uploaded to the repo Security tab
+
+---
+
 ## License
 
 MIT
