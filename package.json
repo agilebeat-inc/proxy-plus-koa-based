@@ -33,6 +33,9 @@
     "pino-pretty": "^13.0.0",
     "undici": "^7.16.0"
   },
+  "overrides": {
+    "qs": "6.14.1"
+  },
   "devDependencies": {
     "@eslint/css": "^0.11.1",
     "@eslint/js": "^9.36.0",
