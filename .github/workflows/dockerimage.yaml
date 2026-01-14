@@ -9,14 +9,32 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      contents: read
       id-token: write
+      security-events: write
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Build and test kubectl container
       run: |
-        GIT_BRANCH=${GITHUB_REF#refs/heads/} make docker_build
-        GIT_BRANCH=${GITHUB_REF#refs/heads/} make test
+        DOCKER_IMAGE=agilebeat/proxy-plus-koa-based GIT_BRANCH=${GITHUB_REF#refs/heads/} make docker_build
+        DOCKER_IMAGE=agilebeat/proxy-plus-koa-based GIT_BRANCH=${GITHUB_REF#refs/heads/} make test
+
+    - name: Trivy scan container image
+      uses: aquasecurity/trivy-action@0.24.0
+      with:
+        scan-type: image
+        image-ref: agilebeat/proxy-plus-koa-based:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+        format: sarif
+        output: trivy-image.sarif
+        severity: HIGH,CRITICAL
+        limit-severities-for-sarif: true
+        ignore-unfixed: true
+
+    - name: Upload Trivy SARIF to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: trivy-image.sarif
     - name: Docker meta
       if: ${{ startsWith(github.ref, 'refs/heads/m') || startsWith(github.ref, 'refs/heads/v') }}
       id: docker_meta
