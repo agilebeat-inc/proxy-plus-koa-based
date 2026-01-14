@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y git curl sudo
 # Set working directory
 WORKDIR /app
 
+# Upgrade npm to pick up patched bundled dependencies (e.g. glob CVEs in npm's deps)
+RUN npm install -g npm@11.7.0 --no-audit --no-fund
+
 # Copy only dependency manifests first (better layer caching)
 COPY package.json package-lock.json ./
 
@@ -21,6 +24,9 @@ RUN npm run build:all
 FROM node:24-slim
 
 WORKDIR /app
+
+# Upgrade npm to pick up patched bundled dependencies (e.g. glob CVEs in npm's deps)
+RUN npm install -g npm@11.7.0 --no-audit --no-fund
 
 # Copy dependency manifests first for better layer caching
 COPY --from=builder /app/package.json /app/package-lock.json ./
