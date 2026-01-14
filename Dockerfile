@@ -7,23 +7,26 @@ RUN apt-get update && apt-get install -y git curl sudo
 # Set working directory
 WORKDIR /app
 
-# Clone the GitHub repository
+# Copy only dependency manifests first (better layer caching)
+COPY package.json package-lock.json ./
+
+RUN npm ci --no-audit --no-fund
+
+# Copy the rest of the source after dependencies are installed
 COPY . .
 
-RUN yarn install 
-
-RUN yarn build:all
+RUN npm run build:all
 
 # -------- Stage 2: Serve with Koa --------
 FROM node:24-slim
 
 WORKDIR /app
 
-# Copy package.json and yarn.lock first for better layer caching
-COPY --from=builder /app/package.json /app/yarn.lock ./
+# Copy dependency manifests first for better layer caching
+COPY --from=builder /app/package.json /app/package-lock.json ./
 
 # Install only production dependencies
-RUN yarn install --production
+RUN npm ci --omit=dev --no-audit --no-fund
 
 # Copy the dist folder from the builder stage
 COPY --from=builder /app/dist ./
