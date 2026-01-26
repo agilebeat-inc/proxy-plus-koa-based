@@ -1,9 +1,12 @@
+import type { RequestHeaderRule } from './RequestHeaderRule';
+
 export interface DynamicRoute {
   doNotRenderButton: boolean | undefined;
   name: string;
   route: string;
   target: string;
   rewritebase?: boolean;
+  requestHeaderRules?: RequestHeaderRule[];
   redirect?: string | {
     default: string;
     conditionalRedirects?: Array<{

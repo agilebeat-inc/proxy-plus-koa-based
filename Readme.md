@@ -52,11 +52,24 @@ WebSocket support is included, which is especially useful when proxying the Neo4
     {
       "name": "analytics",
       "route": "/analytics(.*)",
-      "target": "http://<some webapp address>:3000"
+      "target": "http://<some webapp address>:3000",
+      "requestHeaderRules": [
+        { "operation": "create", "headerName": "x-proxy-plus", "value": "true" },
+        { "operation": "update", "headerName": "x-forwarded-proto", "value": "https" },
+        {
+          "operation": "update",
+          "headerName": "x-client-type",
+          "value": "json",
+          "when": { "condition": "header", "headerName": "accept", "includes": "application/json" }
+        },
+        { "operation": "patch", "headerName": "cookie", "pattern": "session=[^;]+", "replacement": "session=REDACTED" }
+      ]
     }
   ]
   ```
   The first item on the list is the default application.
+  
+  `requestHeaderRules` are applied in order before proxying the request upstream and support CRUD-like `create`, `update`, `patch` (regex replace), and `delete`, optionally gated by a `when` header condition.
 
 - **`IGNORE_URLS_FOR_LOGGING_BY_PREFIX`**:  
   Comma-separated list or JSON array of URL path prefixes to ignore in request logging. Useful for suppressing logs for health checks, static assets, or other non-essential endpoints.  

@@ -9,6 +9,8 @@ import { runPolicy } from '../pep/policy-executor';
 import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '../utils/requestContextHelper';
 import fs from 'fs';
 import path from 'path';
+import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
+import type { RequestHeaderRule } from '../types/RequestHeaderRule';
 
 const router = new Router();
 
@@ -97,7 +99,8 @@ function registerProxiedRoute({
   target,
   rewritebase,
   conditionalReturns,
-  subpathReturns
+  subpathReturns,
+  requestHeaderRules
 }: {
   name: string;
   route: string;
@@ -113,6 +116,7 @@ function registerProxiedRoute({
     path: string;
     return: string;
   }>;
+  requestHeaderRules?: RequestHeaderRule[];
 }) {
       router.all(route, async (ctx) => {
       try {
@@ -147,13 +151,17 @@ function registerProxiedRoute({
           const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
           const url = new URL(targetUrl);
           const isHttps = url.protocol === 'https:';
+          const proxyReqHeaders = applyRequestHeaderRules(
+            { ...ctx.headers, host: url.hostname },
+            requestHeaderRules
+          );
           const requestOptions: RequestOptions = {
             protocol: url.protocol,
             hostname: url.hostname,
             port: url.port || (isHttps ? 443 : 80),
             path: url.pathname + url.search,
             method: ctx.method,
-            headers: { ...ctx.headers, host: url.hostname },
+            headers: proxyReqHeaders,
           };
 
           const isWebSocketUpgrade =
@@ -349,7 +357,7 @@ function registerStaticFileRoute({ route, relativeFilePath }: { route: string; r
   });
 }
 
-dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns }) => {
+dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns, requestHeaderRules }) => {
   if (redirect) {
     registerRedirectRoute({ route, redirect });
     return;
@@ -359,7 +367,7 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage,
     registerStaticFileRoute({ route, relativeFilePath });
     return;
   } else if (target) {
-    registerProxiedRoute({ name, route, target, rewritebase, conditionalReturns, subpathReturns });
+    registerProxiedRoute({ name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
     return;
   } else {
     logger.debug(`Ignoring route '${name}' in setting up dynamic routes because it is missing a target.`);
