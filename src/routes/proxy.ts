@@ -10,7 +10,7 @@ import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '..
 import fs from 'fs';
 import path from 'path';
 import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
-import type { RequestHeaderRule } from '../types/RequestHeaderRule';
+import type { RegisterProxiedRouteOptions } from '../types/RegisterProxiedRoute';
 
 const router = new Router();
 
@@ -101,23 +101,7 @@ function registerProxiedRoute({
   conditionalReturns,
   subpathReturns,
   requestHeaderRules
-}: {
-  name: string;
-  route: string;
-  target: string;
-  rewritebase?: boolean;
-  conditionalReturns?: Array<{
-    condition: string;
-    headerName: string;
-    includes: string;
-    return: string;
-  }>;
-  subpathReturns?: Array<{
-    path: string;
-    return: string;
-  }>;
-  requestHeaderRules?: RequestHeaderRule[];
-}) {
+}: RegisterProxiedRouteOptions) {
       router.all(route, async (ctx) => {
       try {
         if (subpathReturns && Array.isArray(subpathReturns)) {
