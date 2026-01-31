@@ -10,7 +10,6 @@ import {
   SERVICES_HTML,
   UPSTREAM_ERROR_MSG,
   DYNAMIC_ROUTES_INVENTORY_PREFIX,
-  USER_HEADER_FOR_CN,
   NEO4J_BROWSER_MANIFEST,
 } from '../config/env';
 import { runPolicy } from '../pep/policy-executor';
