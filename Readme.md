@@ -145,7 +145,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
     name: "Browser",
     route: "/analytics/(.*)",
-    target: "http://10.182.1.86:3001",
+    target: "http://10.29.1.86:3001",
     rewritebase: true,
     policyName: "mock-always-allow",
     connectorName: "simple"
@@ -153,7 +153,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
   {
     name: "Link Analytics",
     route: "/graph(.*)",
-    target: "http://10.182.1.86:7474",
+    target: "http://10.29.1.86:7474",
     rewritebase: false,
     policyName: "mock-always-allow",
     connectorName: "mock"
