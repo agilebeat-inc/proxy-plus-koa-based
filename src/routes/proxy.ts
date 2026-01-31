@@ -107,7 +107,7 @@ function conditionalReturnToJson(ctx: Router.RouterContext, returnKey: string): 
   ctx.body = responseBody;
 }
 
-function tryHandleSubpathReturns(
+function handleSubpathReturns(
   ctx: Router.RouterContext,
   subpathReturns: RegisterProxiedRouteOptions['subpathReturns']
 ): boolean {
@@ -125,7 +125,7 @@ function tryHandleSubpathReturns(
   return false;
 }
 
-function tryHandleHeaderConditionalReturns(
+function handleHeaderConditionalReturns(
   ctx: Router.RouterContext,
   conditionalReturns: RegisterProxiedRouteOptions['conditionalReturns']
 ): boolean {
@@ -282,6 +282,23 @@ function readResponseBody(proxyRes: IncomingMessage): Promise<Buffer> {
   });
 }
 
+function forwardRequestBodyToProxy(ctx: Router.RouterContext, proxyReq: ClientRequest): void {
+  if (ctx.req.readable) {
+    ctx.req.pipe(proxyReq);
+    return;
+  }
+
+  if (ctx.request.body) {
+    proxyReq.write(
+      typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body)
+    );
+    proxyReq.end();
+    return;
+  }
+
+  proxyReq.end();
+}
+
 async function handleProxyResponse(
   ctx: Router.RouterContext,
   proxyRes: IncomingMessage,
@@ -308,24 +325,7 @@ async function handleProxyResponse(
   ctx.body = updatedBody;
 }
 
-function forwardRequestBodyToProxy(ctx: Router.RouterContext, proxyReq: ClientRequest): void {
-  if (ctx.req.readable) {
-    ctx.req.pipe(proxyReq);
-    return;
-  }
-
-  if (ctx.request.body) {
-    proxyReq.write(
-      typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body)
-    );
-    proxyReq.end();
-    return;
-  }
-
-  proxyReq.end();
-}
-
-function proxyToTarget(ctx: Router.RouterContext, options: RegisterProxiedRouteOptions): Promise<void> {
+function handleProxyForTarget(ctx: Router.RouterContext, options: RegisterProxiedRouteOptions): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const routePrefix = getRoutePrefix(options.route);
     const url = buildTargetUrl(ctx, options.target, routePrefix);
@@ -369,15 +369,15 @@ function registerProxiedRoute({
 }: RegisterProxiedRouteOptions) {
   router.all(route, async (ctx) => {
     try {
-      if (tryHandleSubpathReturns(ctx, subpathReturns)) {
+      if (handleSubpathReturns(ctx, subpathReturns)) {
         return;
       }
 
-      if (tryHandleHeaderConditionalReturns(ctx, conditionalReturns)) {
+      if (handleHeaderConditionalReturns(ctx, conditionalReturns)) {
         return;
       }
 
-      await proxyToTarget(ctx, { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
+      await handleProxyForTarget(ctx, { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
     } catch (err) {
       const logError = {
         reqId: ctx.state?.reqId || null,
