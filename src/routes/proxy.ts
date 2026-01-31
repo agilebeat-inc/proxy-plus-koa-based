@@ -1,10 +1,18 @@
 // routes/proxy.ts
 import Router from 'koa-router';
 import http, { RequestOptions, IncomingMessage } from 'http';
+import type { ClientRequest, IncomingHttpHeaders, OutgoingHttpHeaders } from 'http';
 import https from 'https';
 import { URL } from 'url';
 import logger from '../utils/logger';
-import { DYNAMIC_ROUTES, SERVICES_HTML, UPSTREAM_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX, USER_HEADER_FOR_CN, NEO4J_BROWSER_MANIFEST } from '../config/env' 
+import {
+  DYNAMIC_ROUTES,
+  SERVICES_HTML,
+  UPSTREAM_ERROR_MSG,
+  DYNAMIC_ROUTES_INVENTORY_PREFIX,
+  USER_HEADER_FOR_CN,
+  NEO4J_BROWSER_MANIFEST,
+} from '../config/env';
 import { runPolicy } from '../pep/policy-executor';
 import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '../utils/requestContextHelper';
 import fs from 'fs';
@@ -93,6 +101,263 @@ function registerRedirectRoute({
   });
 }
 
+function conditionalReturnToJson(ctx: Router.RouterContext, returnKey: string): void {
+  const responseBody = conditionalReturnValues[returnKey] ?? '';
+  ctx.type = 'application/json';
+  ctx.body = responseBody;
+}
+
+function tryHandleSubpathReturns(
+  ctx: Router.RouterContext,
+  subpathReturns: RegisterProxiedRouteOptions['subpathReturns']
+): boolean {
+  if (!subpathReturns || !Array.isArray(subpathReturns)) {
+    return false;
+  }
+
+  for (const subpath of subpathReturns) {
+    if (ctx.path.startsWith(subpath.path)) {
+      conditionalReturnToJson(ctx, subpath.return);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function tryHandleHeaderConditionalReturns(
+  ctx: Router.RouterContext,
+  conditionalReturns: RegisterProxiedRouteOptions['conditionalReturns']
+): boolean {
+  if (!conditionalReturns || !Array.isArray(conditionalReturns)) {
+    return false;
+  }
+
+  for (const cond of conditionalReturns) {
+    if (cond.condition !== 'header' || !cond.headerName || !cond.includes) {
+      continue;
+    }
+
+    const headerValue = ctx.headers[cond.headerName.toLowerCase()];
+    if (headerValue && headerValue.includes(cond.includes)) {
+      conditionalReturnToJson(ctx, cond.return);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getRoutePrefix(route: string): string {
+  return route.replace(/\(.*\)$/, '');
+}
+
+function getHeaderValueAsString(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+  return value ?? '';
+}
+
+function getNormalizedProxiedPath(ctx: Router.RouterContext, routePrefix: string): string {
+  const proxiedPath = ctx.path.replace(new RegExp(`^${routePrefix}`), '') || '/';
+  return proxiedPath.startsWith('/') ? proxiedPath : '/' + proxiedPath;
+}
+
+function buildTargetUrl(ctx: Router.RouterContext, target: string, routePrefix: string): URL {
+  const normalizedTarget = target.replace(/\/$/, '');
+  const normalizedProxiedPath = getNormalizedProxiedPath(ctx, routePrefix);
+  const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
+  return new URL(targetUrl);
+}
+
+function buildProxyRequestHeaders(
+  ctx: Router.RouterContext,
+  hostname: string,
+  requestHeaderRules: RegisterProxiedRouteOptions['requestHeaderRules']
+): OutgoingHttpHeaders {
+  return applyRequestHeaderRules({ ...ctx.headers, host: hostname }, requestHeaderRules);
+}
+
+function buildProxyRequestOptions(
+  ctx: Router.RouterContext,
+  url: URL,
+  isHttps: boolean,
+  headers: OutgoingHttpHeaders
+): RequestOptions {
+  return {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port || (isHttps ? 443 : 80),
+    path: url.pathname + url.search,
+    method: ctx.method,
+    headers,
+  };
+}
+
+function isWebSocketUpgradeRequest(ctx: Router.RouterContext): boolean {
+  const upgrade = ctx.headers['upgrade'];
+  return typeof upgrade === 'string' && upgrade.toLowerCase() === 'websocket';
+}
+
+function rewriteLocationHeaderForRedirect(
+  headers: IncomingHttpHeaders,
+  statusCode: number | undefined,
+  routePrefix: string
+): void {
+  if (!statusCode || statusCode < 300 || statusCode >= 400 || !headers.location) {
+    return;
+  }
+
+  const originalLocation = Array.isArray(headers.location)
+    ? headers.location[0]
+    : headers.location;
+  let rewrittenLocation = '';
+
+  try {
+    const locationUrl = new URL(originalLocation);
+    rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
+    headers.location = rewrittenLocation;
+  } catch {
+    logger.debug(
+      `Rewriting Location header for redirect: original='${originalLocation}' rewritten='${rewrittenLocation}'`
+    );
+  }
+}
+
+function injectBaseHref(body: string, routePrefix: string): string {
+  let updated = body.replace(/<base[^>]*>/gi, '');
+  updated = updated.replace(/<head([^>]*)>/i, `<head$1><base href="${routePrefix}/">`);
+  return updated;
+}
+
+function patchContentSecurityPolicyForBaseUri(headers: IncomingHttpHeaders, baseUri: string): void {
+  const csp = headers['content-security-policy'];
+
+  if (!csp) {
+    headers['content-security-policy'] = `base-uri 'self' ${baseUri}`;
+    return;
+  }
+
+  if (typeof csp === 'string') {
+    if (/base-uri\s/.test(csp)) {
+      headers['content-security-policy'] = csp.replace(/base-uri [^;]+/, `base-uri 'self' ${baseUri}`);
+      return;
+    }
+    headers['content-security-policy'] = `${csp}; base-uri 'self' ${baseUri}`;
+    return;
+  }
+
+  if (Array.isArray(csp)) {
+    headers['content-security-policy'] = csp.map((entry) =>
+      /base-uri\s/.test(entry)
+        ? entry.replace(/base-uri [^;]+/, `base-uri 'self' ${baseUri}`)
+        : `${entry}; base-uri 'self' ${baseUri}`
+    );
+  }
+}
+
+function applyProxyResponseHeaders(
+  ctx: Router.RouterContext,
+  headers: IncomingHttpHeaders,
+  options?: { excludeContentLength?: boolean }
+): void {
+  Object.entries(headers).forEach(([key, value]) => {
+    if (!value) {
+      return;
+    }
+    if (options?.excludeContentLength && key.toLowerCase() === 'content-length') {
+      return;
+    }
+    ctx.set(key, Array.isArray(value) ? value.join(',') : value);
+  });
+}
+
+function readResponseBody(proxyRes: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const bodyChunks: Buffer[] = [];
+    proxyRes.on('data', (chunk) => bodyChunks.push(chunk));
+    proxyRes.on('end', () => resolve(Buffer.concat(bodyChunks)));
+    proxyRes.on('error', reject);
+  });
+}
+
+async function handleProxyResponse(
+  ctx: Router.RouterContext,
+  proxyRes: IncomingMessage,
+  headers: IncomingHttpHeaders,
+  options: { routePrefix: string; rewritebase?: boolean }
+): Promise<void> {
+  const contentType = getHeaderValueAsString(proxyRes.headers['content-type']);
+  const shouldRewriteHtml = Boolean(options.rewritebase) && contentType.includes('text/html');
+
+  if (!shouldRewriteHtml) {
+    applyProxyResponseHeaders(ctx, headers);
+    ctx.body = proxyRes;
+    return;
+  }
+
+  const bodyBuffer = await readResponseBody(proxyRes);
+  const baseUri = `${ctx.protocol}://${ctx.host}${options.routePrefix}/`;
+
+  const updatedBody = injectBaseHref(bodyBuffer.toString('utf8'), options.routePrefix);
+  patchContentSecurityPolicyForBaseUri(headers, baseUri);
+
+  ctx.set('content-type', contentType);
+  applyProxyResponseHeaders(ctx, headers, { excludeContentLength: true });
+  ctx.body = updatedBody;
+}
+
+function forwardRequestBodyToProxy(ctx: Router.RouterContext, proxyReq: ClientRequest): void {
+  if (ctx.req.readable) {
+    ctx.req.pipe(proxyReq);
+    return;
+  }
+
+  if (ctx.request.body) {
+    proxyReq.write(
+      typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body)
+    );
+    proxyReq.end();
+    return;
+  }
+
+  proxyReq.end();
+}
+
+function proxyToTarget(ctx: Router.RouterContext, options: RegisterProxiedRouteOptions): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const routePrefix = getRoutePrefix(options.route);
+    const url = buildTargetUrl(ctx, options.target, routePrefix);
+    const isHttps = url.protocol === 'https:';
+    const proxyReqHeaders = buildProxyRequestHeaders(ctx, url.hostname, options.requestHeaderRules);
+    const requestOptions = buildProxyRequestOptions(ctx, url, isHttps, proxyReqHeaders);
+
+    if (isWebSocketUpgradeRequest(ctx)) {
+      return resolve(); // WebSocket requests are handled in websocketHandler.ts
+    }
+
+    const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
+      ctx.status = proxyRes.statusCode || 500;
+
+      const headers = { ...proxyRes.headers };
+      rewriteLocationHeaderForRedirect(headers, proxyRes.statusCode, routePrefix);
+
+      handleProxyResponse(ctx, proxyRes, headers, { routePrefix, rewritebase: options.rewritebase })
+        .then(resolve)
+        .catch(reject);
+    });
+
+    proxyReq.on('error', (err) => {
+      ctx.status = 500;
+      ctx.body = { message: 'Proxy error', error: err.message };
+      reject(err);
+    });
+
+    forwardRequestBodyToProxy(ctx, proxyReq);
+  });
+}
+
 function registerProxiedRoute({
   name,
   route,
@@ -102,172 +367,33 @@ function registerProxiedRoute({
   subpathReturns,
   requestHeaderRules
 }: RegisterProxiedRouteOptions) {
-      router.all(route, async (ctx) => {
-      try {
-        if (subpathReturns && Array.isArray(subpathReturns)) {
-          for (const subpath of subpathReturns) {
-            if (ctx.path.startsWith(subpath.path)) {
-              const responseBody = conditionalReturnValues[subpath.return] ?? '';
-              ctx.type = 'application/json';
-              ctx.body = responseBody;
-              return;
-            }
-          }
-        }
-        if (conditionalReturns && Array.isArray(conditionalReturns)) {
-          for (const cond of conditionalReturns) {
-            if (cond.condition === 'header' && cond.headerName && cond.includes) {
-              const headerValue = ctx.headers[cond.headerName.toLowerCase()];
-              if (headerValue && headerValue.includes(cond.includes)) {
-                const responseBody = conditionalReturnValues[cond.return] ?? '';
-                ctx.type = 'application/json';
-                ctx.body = responseBody;
-                return;
-              }
-            }
-          }
-        }
-        await new Promise<void>((resolve, reject) => {
-          const prefixForRoute = route.replace(/\(.*\)$/, '');
-          const proxiedPath = ctx.path.replace(new RegExp(`^${prefixForRoute}`), '') || '/';
-          const normalizedTarget = target.replace(/\/$/, '');
-          const normalizedProxiedPath = proxiedPath.startsWith('/') ? proxiedPath : '/' + proxiedPath;
-          const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
-          const url = new URL(targetUrl);
-          const isHttps = url.protocol === 'https:';
-          const proxyReqHeaders = applyRequestHeaderRules(
-            { ...ctx.headers, host: url.hostname },
-            requestHeaderRules
-          );
-          const requestOptions: RequestOptions = {
-            protocol: url.protocol,
-            hostname: url.hostname,
-            port: url.port || (isHttps ? 443 : 80),
-            path: url.pathname + url.search,
-            method: ctx.method,
-            headers: proxyReqHeaders,
-          };
-
-          const isWebSocketUpgrade =
-            ctx.headers['upgrade'] &&
-            ctx.headers['upgrade'].toLowerCase() === 'websocket';
-          
-          if (isWebSocketUpgrade) {
-            return resolve(); // WebSocket requests are handled in websocketHandler.ts
-          }
-
-          const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
-            ctx.status = proxyRes.statusCode || 500;
-
-            // Handle and rewrite Location header for redirects (3xx)
-            const headers = { ...proxyRes.headers };
-            if (
-              proxyRes.statusCode &&
-              proxyRes.statusCode >= 300 &&
-              proxyRes.statusCode < 400 &&
-              headers.location
-            ) {
-              const originalLocation = headers.location as string;
-              let rewrittenLocation: string = "";
-              try {
-                const locationUrl = new URL(originalLocation);
-                const routePrefix = prefixForRoute;
-                rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
-                headers.location = rewrittenLocation;
-              } catch {
-                logger.debug(`Rewriting Location header for redirect: original='${originalLocation}' rewritten='${rewrittenLocation}'`);
-              }
-            }
-
-            // Intercept HTML responses and inject <base href="..."> if rewritebase is true
-            const bodyChunks: Buffer[] = [];
-            const contentType = proxyRes.headers['content-type'] || '';
-            const shouldRewriteHtml = contentType.includes('text/html') && rewritebase;
-
-            if (shouldRewriteHtml) {
-              proxyRes.on('data', (chunk) => bodyChunks.push(chunk));
-              proxyRes.on('end', () => {
-                let body = Buffer.concat(bodyChunks).toString('utf8');
-                if (rewritebase) {
-                  // Remove any existing <base ...> tag
-                  body = body.replace(/<base[^>]*>/gi, '');
-                  // Inject <base href="..."> right after <head>
-                  body = body.replace(
-                    /<head([^>]*)>/i,
-                    `<head$1><base href="${prefixForRoute}/">`
-                  );
-                  // --- Add or patch Content-Security-Policy for base-uri ---
-                  const baseUri = `${ctx.protocol}://${ctx.host}${prefixForRoute}/`;
-                  if (headers['content-security-policy']) {
-                    if (typeof headers['content-security-policy'] === 'string') {
-                      if (/base-uri\s/.test(headers['content-security-policy'])) {
-                        headers['content-security-policy'] = headers['content-security-policy'].replace(
-                          /base-uri [^;]+/,
-                          `base-uri 'self' ${baseUri}`
-                        );
-                      } else {
-                        headers['content-security-policy'] += `; base-uri 'self' ${baseUri}`;
-                      }
-                    } else if (Array.isArray(headers['content-security-policy'])) {
-                      headers['content-security-policy'] = headers['content-security-policy'].map((csp) =>
-                        /base-uri\s/.test(csp)
-                          ? csp.replace(/base-uri [^;]+/, `base-uri 'self' ${baseUri}`)
-                          : `${csp}; base-uri 'self' ${baseUri}`
-                      );
-                    }
-                  } else {
-                    headers['content-security-policy'] = `base-uri 'self' ${baseUri}`;
-                  }
-                }
-                ctx.set('content-type', contentType);
-                Object.entries(headers).forEach(([key, value]) => {
-                  if (key.toLowerCase() !== 'content-length' && value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
-                });
-                ctx.body = body;
-                resolve();
-              });
-              proxyRes.on('error', reject);
-            } else {
-              Object.entries(headers).forEach(([key, value]) => {
-                if (value) ctx.set(key, Array.isArray(value) ? value.join(',') : value);
-              });
-              ctx.body = proxyRes;
-              resolve();
-            }
-          });
-
-          proxyReq.on('error', (err) => {
-            ctx.status = 500;
-            ctx.body = { message: 'Proxy error', error: err.message };
-            reject(err);
-          });
-
-          if (ctx.req.readable) {
-            ctx.req.pipe(proxyReq);
-          } else if (ctx.request.body) {
-            proxyReq.write(typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body));
-            proxyReq.end();
-          } else {
-            proxyReq.end();
-          }
-        });
-      } catch (err) {
-        // ctx is available here!
-        const logError = {
-          reqId: ctx.state?.reqId || null,
-          event: 'ERROR',
-          durationMs: ctx.state?.start ? Date.now() - ctx.state.start : undefined,
-          error: err instanceof Error ? err.message : String(err),
-          target,
-          route,
-          path: ctx.path,
-        };
-        logger.error(JSON.stringify(logError));
-        ctx.status = 502;
-        ctx.type = 'html';
-        ctx.body = UPSTREAM_ERROR_MSG;
+  router.all(route, async (ctx) => {
+    try {
+      if (tryHandleSubpathReturns(ctx, subpathReturns)) {
+        return;
       }
-    });
+
+      if (tryHandleHeaderConditionalReturns(ctx, conditionalReturns)) {
+        return;
+      }
+
+      await proxyToTarget(ctx, { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
+    } catch (err) {
+      const logError = {
+        reqId: ctx.state?.reqId || null,
+        event: 'ERROR',
+        durationMs: ctx.state?.start ? Date.now() - ctx.state.start : undefined,
+        error: err instanceof Error ? err.message : String(err),
+        target,
+        route,
+        path: ctx.path,
+      };
+      logger.error(JSON.stringify(logError));
+      ctx.status = 502;
+      ctx.type = 'html';
+      ctx.body = UPSTREAM_ERROR_MSG;
+    }
+  });
 }
 
 function registerSplashPageRoute({ name, route }: { name: string; route: string }) {
