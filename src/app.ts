@@ -1,7 +1,7 @@
 // app.ts
 import Koa from 'koa';
 import websockify from 'koa-websocket';
-import { websocketNeo4jHandler } from './middleware/websocketHandler';
+import { websocketNeo4jHandler } from './middleware/websocketNeo4jHandler';
 
 import proxyRouter from './routes/proxy';
 import { policyRendererMiddleware } from './middleware/policyRenderer';
