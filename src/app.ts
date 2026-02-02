@@ -21,8 +21,12 @@ app.use(pepMiddleware);     //pep denies or accepts based on state in localStora
 app.use(proxyRouter.routes()); // routing starts here
 app.use(proxyRouter.allowedMethods());
 
-app.ws.use(async (ctx) => {
-    await websocketHandler(ctx);
+app.ws.use(async (ctx, next) => {
+    switch (ctx.path) {
+    case '/': return websocketHandler(ctx, next);
+    default: ctx.websocket.close(1008, 'No handler'); 
+  }
+  // await websocketHandler(ctx);
 });
 
 app.listen(3000, () => {

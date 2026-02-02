@@ -6,6 +6,7 @@ import { constructRequestContext, extractUserCN } from '../utils/requestContextH
 
 const targetWs = WS_TARGET_URL;
 import { runPolicy } from '../pep/policy-executor';
+import { Next } from 'koa';
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -365,7 +366,7 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function websocketHandler(ctx: any) {
+export async function websocketHandler(ctx: any, _next: Next | undefined) {
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
   let isContextResolved = false;
