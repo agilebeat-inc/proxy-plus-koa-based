@@ -366,7 +366,7 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function websocketHandler(ctx: any, _next: Next | undefined) {
+export async function websocketNeo4jHandler(ctx: any, _next: Next | undefined) {
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
   let isContextResolved = false;

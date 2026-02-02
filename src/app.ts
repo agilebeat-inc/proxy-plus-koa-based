@@ -1,7 +1,7 @@
 // app.ts
 import Koa from 'koa';
 import websockify from 'koa-websocket';
-import { websocketHandler } from './middleware/websocketHandler';
+import { websocketNeo4jHandler } from './middleware/websocketHandler';
 
 import proxyRouter from './routes/proxy';
 import { policyRendererMiddleware } from './middleware/policyRenderer';
@@ -15,7 +15,9 @@ const app = websockify(new Koa({ asyncLocalStorage: true }));
 const websocketRouter = async (ctx: any, next: any) => {
   switch (ctx.path) {
     case '/':
-      return websocketHandler(ctx, next);
+      return websocketNeo4jHandler(ctx, next);
+    // case '/mcp':
+    //   return websocketNeo4jMcpHandler(ctx, next);
     default:
       ctx.websocket.close(1008, 'No handler');
   }
