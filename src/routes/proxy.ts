@@ -148,6 +148,9 @@ function handleHeaderConditionalReturns(
 }
 
 function getRoutePrefix(route: string): string {
+  // Strips off any trailing parenthesized chunk at the end of the string. 
+  // The pattern /\(.*\)$/ matches the last opening parenthesis through all following 
+  // characters up to the string end; 
   return route.replace(/\(.*\)$/, '');
 }
 
@@ -159,11 +162,17 @@ function getHeaderValueAsString(value: string | string[] | undefined): string {
 }
 
 function getNormalizedProxiedPath(ctx: Router.RouterContext, routePrefix: string): string {
+  if (routePrefix ===  ctx.path) {
+    return '';
+  }
   const proxiedPath = ctx.path.replace(new RegExp(`^${routePrefix}`), '') || '/';
   return proxiedPath.startsWith('/') ? proxiedPath : '/' + proxiedPath;
 }
 
 function buildTargetUrl(ctx: Router.RouterContext, target: string, routePrefix: string): URL {
+  // TODO: Refactor this method to reflect clean rules of construction target request
+  // Right now when rote prefix is equal context request it will be pass as it is
+  // with no chnages
   const normalizedTarget = target.replace(/\/$/, '');
   const normalizedProxiedPath = getNormalizedProxiedPath(ctx, routePrefix);
   const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
@@ -327,6 +336,7 @@ async function handleProxyResponse(
 function handleProxyForTarget(ctx: Router.RouterContext, options: RegisterProxiedRouteOptions): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const routePrefix = getRoutePrefix(options.route);
+    logger.info(`routePrefix: ${routePrefix}`)
     const url = buildTargetUrl(ctx, options.target, routePrefix);
     const isHttps = url.protocol === 'https:';
     const proxyReqHeaders = buildProxyRequestHeaders(ctx, url.hostname, options.requestHeaderRules);
