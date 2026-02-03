@@ -7,6 +7,11 @@ export const POLICY_NAME = getEnvVar('POLICY_NAME', 'mock-always-allow');
 export const CONNECTOR_PLUGIN_NAME = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
 export const USER_HEADER_FOR_CN = getEnvVar('USER_HEADER_FOR_CN', 'x-user-common-name');
 export const WS_TARGET_URL = getEnvVar('WS_TARGET_URL', 'ws://10.29.1.86:7687');
+export const MCP_WS_TARGET_URL = getEnvVar('MCP_WS_TARGET_URL', 'ws://10.29.1.86:7475/mcp');
+export const MCP_WS_AUTH_HEADER = getEnvVar(
+  'MCP_WS_AUTH_HEADER',
+  'Basic bmVvNGo6bXktcGFzc3dvcmQ='
+);
 export const DYNAMIC_ROUTES_SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_SERVICES_HTML);
 export const UPSTREAM_ERROR_MSG = getEnvVar('UPSTREAM_ERROR_MSG', DEFAULT_UPSTREAM_ERROR_MSG);
 export const SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_SERVICES_HTML);
