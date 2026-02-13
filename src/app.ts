@@ -2,7 +2,7 @@
 import Koa from 'koa';
 import websockify from 'koa-websocket';
 import { websocketNeo4jHandler } from './middleware/websocketNeo4jHandler';
-import { websocketNeo4jMcpHandler } from './middleware/websocketNeo4jMcpHandler';
+import { websocketAttuHandler } from './middleware/websocketAttuHandler';
 
 import proxyRouter from './routes/proxy';
 import { policyRendererMiddleware } from './middleware/policyRenderer';
@@ -19,8 +19,8 @@ const websocketRouter = async (ctx: any, next: any) => {
   switch (ctx.path) {
     case '/':
       return websocketNeo4jHandler(ctx, next);
-    case '/mcp':
-      return websocketNeo4jMcpHandler(ctx, next);
+    case '/attu':
+      return websocketAttuHandler(ctx, next);
     default:
       ctx.websocket.close(1008, 'No handler');
   }

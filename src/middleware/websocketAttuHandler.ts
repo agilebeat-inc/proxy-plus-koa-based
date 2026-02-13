@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
 import { RequestContext } from '../localStorage';
-import { MCP_WS_AUTH_HEADER, MCP_WS_TARGET_URL } from '../config/env';
+import { ATTU_WS_AUTH_HEADER, ATTU_WS_TARGET_URL } from '../config/env';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
 import { runPolicy } from '../pep/policy-executor';
 import { Next } from 'koa';
@@ -65,8 +65,18 @@ function formatPayloadForLog(msg: any): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined) {
-  logger.info(`******************Incoming MCP WebSocket connection request at path: ${ctx.path}`);
+function resolveAttuTargetUrl(ctx: any): string {
+  const query = ctx?.querystring;
+  if (!query) {
+    return ATTU_WS_TARGET_URL;
+  }
+  const joinChar = ATTU_WS_TARGET_URL.includes('?') ? '&' : '?';
+  return `${ATTU_WS_TARGET_URL}${joinChar}${query}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function websocketAttuHandler(ctx: any, _next: Next | undefined) {
+  logger.info(`******************Incoming Attu WebSocket connection request at path: ${ctx.path}`);
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
   let isContextResolved = false;
@@ -92,8 +102,8 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
     return context?.isAllowed ?? false;
   };
 
-  const wsOptions = MCP_WS_AUTH_HEADER ? { headers: { Authorization: MCP_WS_AUTH_HEADER } } : undefined;
-  const target = new WebSocket(MCP_WS_TARGET_URL, wsOptions);
+  const targetHeaders = ATTU_WS_AUTH_HEADER ? { Authorization: ATTU_WS_AUTH_HEADER } : undefined;
+  const target = new WebSocket(resolveAttuTargetUrl(ctx), targetHeaders ? { headers: targetHeaders } : undefined);
 
   contextPromise
     .then(isAllowed => {
@@ -136,7 +146,7 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
       logSocketEventInfo(
         context,
         formatPayloadForLog(msg),
-        'WS_MCP_MESSAGE_TO_TARGET',
+        'WS_ATTU_MESSAGE_TO_TARGET',
         target.readyState
       );
     }
@@ -148,7 +158,7 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
       if (context) {
         logSocketEventInfo(
           context,
-          'WebSocket target created for MCP forwarding',
+          'WebSocket target created for Attu forwarding',
           'WS_OPEN_TARGET',
           target.readyState
         );
@@ -176,7 +186,7 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
       logSocketEventInfo(
         context,
         formatPayloadForLog(msg),
-        'WS_MCP_MESSAGE_TO_CLIENT',
+        'WS_ATTU_MESSAGE_TO_CLIENT',
         target.readyState
       );
       if (Buffer.isBuffer(msg)) {
@@ -191,7 +201,7 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
   target.on('open', async () => {
     await getContext();
     if (context) {
-      logSocketEventInfo(context, 'Opened target WebSocket event (MCP)', 'WS_OPEN_TARGET', target.readyState);
+      logSocketEventInfo(context, 'Opened target WebSocket event (Attu)', 'WS_OPEN_TARGET', target.readyState);
     }
   });
 
