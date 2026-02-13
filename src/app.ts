@@ -9,11 +9,13 @@ import { policyRendererMiddleware } from './middleware/policyRenderer';
 import { pepMiddleware } from './middleware/pep';
 import { loggerMiddleware } from './middleware/logger';
 import { userMiddleware } from './middleware/user';
+import logger from './utils/logger';
 
 
 const app = websockify(new Koa({ asyncLocalStorage: true }));
 
 const websocketRouter = async (ctx: any, next: any) => {
+  logger
   switch (ctx.path) {
     case '/':
       return websocketNeo4jHandler(ctx, next);

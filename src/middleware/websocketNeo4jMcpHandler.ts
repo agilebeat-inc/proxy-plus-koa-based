@@ -48,7 +48,25 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatPayloadForLog(msg: any): string {
+  if (Buffer.isBuffer(msg)) {
+    const utf8 = msg.toString('utf8');
+    const printable = /^[\x09\x0A\x0D\x20-\x7E]*$/.test(utf8);
+    return printable ? utf8 : msg.toString('hex');
+  }
+  if (typeof msg === 'string') {
+    return msg;
+  }
+  try {
+    return JSON.stringify(msg);
+  } catch {
+    return String(msg);
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined) {
+  logger.info(`******************Incoming MCP WebSocket connection request at path: ${ctx.path}`);
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
   let isContextResolved = false;
@@ -101,6 +119,7 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
   // Forward messages from client to target
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx.websocket.on('message', async (msg: any) => {
+    logger.info(`------------------->${msg}`);
     const isAllowed = await getIsAllowed();
     if (!isAllowed) {
       if (context) {
@@ -111,6 +130,15 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
       }
       target.terminate();
       return;
+    }
+
+    if (context) {
+      logSocketEventInfo(
+        context,
+        formatPayloadForLog(msg),
+        'WS_MCP_MESSAGE_TO_TARGET',
+        target.readyState
+      );
     }
 
     if (target.readyState === WebSocket.OPEN) {
@@ -139,11 +167,18 @@ export async function websocketNeo4jMcpHandler(ctx: any, _next: Next | undefined
   // Forward messages from target to client
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   target.on('message', async (msg: any) => {
+    logger.info(`<-------------------${formatPayloadForLog(msg)}`);
     await getContext();
     if (ctx.websocket.readyState === WebSocket.OPEN) {
       ctx.websocket.send(msg);
     }
     if (context) {
+      logSocketEventInfo(
+        context,
+        formatPayloadForLog(msg),
+        'WS_MCP_MESSAGE_TO_CLIENT',
+        target.readyState
+      );
       if (Buffer.isBuffer(msg)) {
         logSocketEventDebug(context, msg.toString('hex'), 'WS_MESSAGE_TO_CLIENT', target.readyState);
       } else if (typeof msg === 'string') {
