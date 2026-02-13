@@ -1,30 +1,11 @@
 // app.ts
-import Koa from 'koa';
-import websockify from 'koa-websocket';
-import { websocketNeo4jHandler } from './middleware/websocketNeo4jHandler';
-import { websocketAttuHandler } from './middleware/websocketAttuHandler';
-
 import proxyRouter from './routes/proxy';
+import { createWebsocketEnabledApp } from './routes/proxy-ws';
 import { policyRendererMiddleware } from './middleware/policyRenderer';
 import { pepMiddleware } from './middleware/pep';
 import { loggerMiddleware } from './middleware/logger';
 import { userMiddleware } from './middleware/user';
-import logger from './utils/logger';
-
-
-const app = websockify(new Koa({ asyncLocalStorage: true }));
-
-const websocketRouter = async (ctx: any, next: any) => {
-  logger
-  switch (ctx.path) {
-    case '/':
-      return websocketNeo4jHandler(ctx, next);
-    case '/attu':
-      return websocketAttuHandler(ctx, next);
-    default:
-      ctx.websocket.close(1008, 'No handler');
-  }
-};
+const app = createWebsocketEnabledApp();
 
 // Order do matters
 app.use(userMiddleware);
@@ -34,8 +15,6 @@ app.use(pepMiddleware);     //pep denies or accepts based on state in localStora
 
 app.use(proxyRouter.routes()); // routing starts here
 app.use(proxyRouter.allowedMethods());
-
-app.ws.use(websocketRouter);
 
 app.listen(3000, () => {
   console.log('Server running on http://localhost:3000');

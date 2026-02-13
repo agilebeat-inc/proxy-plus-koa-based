@@ -1,10 +1,15 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
 import { RequestContext } from '../localStorage';
-import { ATTU_WS_AUTH_HEADER, ATTU_WS_TARGET_URL } from '../config/env';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
 import { runPolicy } from '../pep/policy-executor';
 import { Next } from 'koa';
+
+type WebsocketAttuHandlerOptions = {
+  target: string;
+  authHeader?: string;
+  preserveQueryString?: boolean;
+};
 
 function logSocketEventInfo(context: RequestContext, message: string, event: string, status?: number) {
   logger.info({
@@ -65,17 +70,27 @@ function formatPayloadForLog(msg: any): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function resolveAttuTargetUrl(ctx: any): string {
+function resolveAttuTargetUrl(ctx: any, baseTarget: string, preserveQueryString: boolean): string {
+  if (!preserveQueryString) {
+    return baseTarget;
+  }
   const query = ctx?.querystring;
   if (!query) {
-    return ATTU_WS_TARGET_URL;
+    return baseTarget;
   }
-  const joinChar = ATTU_WS_TARGET_URL.includes('?') ? '&' : '?';
-  return `${ATTU_WS_TARGET_URL}${joinChar}${query}`;
+  const joinChar = baseTarget.includes('?') ? '&' : '?';
+  return `${baseTarget}${joinChar}${query}`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function websocketAttuHandler(ctx: any, _next: Next | undefined) {
+export async function websocketAttuHandler(ctx: any, _next: Next | undefined, options?: WebsocketAttuHandlerOptions) {
+  const targetUrl = options?.target;
+  if (!targetUrl) {
+    logger.error(`Missing websocket target in route configuration for path: ${ctx.path}`);
+    ctx.websocket.close(1011, 'WebSocket target is not configured');
+    return;
+  }
+
   logger.info(`******************Incoming Attu WebSocket connection request at path: ${ctx.path}`);
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
@@ -102,8 +117,11 @@ export async function websocketAttuHandler(ctx: any, _next: Next | undefined) {
     return context?.isAllowed ?? false;
   };
 
-  const targetHeaders = ATTU_WS_AUTH_HEADER ? { Authorization: ATTU_WS_AUTH_HEADER } : undefined;
-  const target = new WebSocket(resolveAttuTargetUrl(ctx), targetHeaders ? { headers: targetHeaders } : undefined);
+  const targetHeaders = options?.authHeader ? { Authorization: options.authHeader } : undefined;
+  const target = new WebSocket(
+    resolveAttuTargetUrl(ctx, targetUrl, options?.preserveQueryString ?? false),
+    targetHeaders ? { headers: targetHeaders } : undefined
+  );
 
   contextPromise
     .then(isAllowed => {

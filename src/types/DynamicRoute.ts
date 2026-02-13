@@ -1,5 +1,14 @@
 import type { RequestHeaderRule } from './RequestHeaderRule';
 
+export type DynamicRouteWebSocketHandler = 'neo4j-bolt' | 'proxy';
+
+export interface DynamicRouteWebSocketConfig {
+  handler: DynamicRouteWebSocketHandler;
+  target: string;
+  authHeader?: string;
+  preserveQueryString?: boolean;
+}
+
 export interface DynamicRoute {
   doNotRenderButton: boolean | undefined;
   name: string;
@@ -34,4 +43,5 @@ export interface DynamicRoute {
   connectorName?: string;
   icon?: string;
   hideIfNoAccess?: boolean;
+  websocket?: DynamicRouteWebSocketConfig;
 }

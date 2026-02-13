@@ -6,12 +6,6 @@ import { DEFAULT_INJECTED_BOLT_PRINCIPAL, DEFAULT_INJECTED_BOLT_SCHEME, DEFAULT_
 export const POLICY_NAME = getEnvVar('POLICY_NAME', 'mock-always-allow');
 export const CONNECTOR_PLUGIN_NAME = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
 export const USER_HEADER_FOR_CN = getEnvVar('USER_HEADER_FOR_CN', 'x-user-common-name');
-export const WS_TARGET_URL = getEnvVar('WS_TARGET_URL', 'ws://10.29.1.86:7687');
-export const ATTU_WS_TARGET_URL = getEnvVar('ATTU_WS_TARGET_URL', '');
-export const ATTU_WS_AUTH_HEADER = getEnvVar('ATTU_WS_AUTH_HEADER', '');
-// Backward compatibility for older MCP env names
-export const MCP_WS_TARGET_URL = ATTU_WS_TARGET_URL;
-export const MCP_WS_AUTH_HEADER = ATTU_WS_AUTH_HEADER;
 export const DYNAMIC_ROUTES_SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_SERVICES_HTML);
 export const UPSTREAM_ERROR_MSG = getEnvVar('UPSTREAM_ERROR_MSG', DEFAULT_UPSTREAM_ERROR_MSG);
 export const SERVICES_HTML = getEnvVar('DYNAMIC_ROUTES_SERVICES_HTML', DEFAULT_SERVICES_HTML);

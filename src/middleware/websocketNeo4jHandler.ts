@@ -1,10 +1,8 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
 import { RequestContext } from '../localStorage';
-import { INJECTED_BOLT_CREDENTIALS, INJECTED_BOLT_PRINCIPAL, INJECTED_BOLT_SCHEME, WS_TARGET_URL } from '../config/env';
+import { INJECTED_BOLT_CREDENTIALS, INJECTED_BOLT_PRINCIPAL, INJECTED_BOLT_SCHEME } from '../config/env';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
-
-const targetWs = WS_TARGET_URL;
 import { runPolicy } from '../pep/policy-executor';
 import { Next } from 'koa';
 
@@ -20,6 +18,10 @@ type PackstreamDecoder = {
   };
   Structure: new (signature: number, fields: PackValue[]) => { signature: number; fields: PackValue[] };
   ChannelBuffer: new (buffer: Buffer) => { remaining: () => number };
+};
+
+type WebsocketNeo4jHandlerOptions = {
+  target: string;
 };
 
 let packstreamDecoder: PackstreamDecoder | null = null;
@@ -366,7 +368,14 @@ function logSocketEventError(context: RequestContext, error: any, event: string,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function websocketNeo4jHandler(ctx: any, _next: Next | undefined) {
+export async function websocketNeo4jHandler(ctx: any, _next: Next | undefined, options?: WebsocketNeo4jHandlerOptions) {
+  const targetUrl = options?.target;
+  if (!targetUrl) {
+    logger.error(`Missing websocket target in route configuration for path: ${ctx.path}`);
+    ctx.websocket.close(1011, 'WebSocket target is not configured');
+    return;
+  }
+
   const userCN = extractUserCN(ctx);
   let context: RequestContext | null = null;
   let isContextResolved = false;
@@ -394,7 +403,7 @@ export async function websocketNeo4jHandler(ctx: any, _next: Next | undefined) {
 
   let boltAuthLogged = false;
 
-  const target = new WebSocket(targetWs);
+  const target = new WebSocket(targetUrl);
 
   contextPromise
     .then(isAllowed => {

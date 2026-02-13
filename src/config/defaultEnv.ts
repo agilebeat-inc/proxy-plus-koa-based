@@ -28,6 +28,10 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     route: "/",
     policyName: "mock-always-allow",
     connectorName: "simple",
+    websocket: {
+      handler: "neo4j-bolt",
+      target: "ws://10.29.1.86:7687"
+    },
     redirect: {
       default: "/services",
       conditionalRedirects: [
@@ -94,6 +98,12 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     name: "Link Analytics AI",
     route: "/mcp",
     target: "http://10.29.1.86:7475/mcp",
+    websocket: {
+      handler: "proxy",
+      target: "ws://10.29.1.86:7475/mcp",
+      authHeader: "Basic bmVvNGo6bXktcGFzc3dvcmQ=",
+      preserveQueryString: true
+    },
     requestHeaderRules: [
       { "operation": "create", "headerName": "Authorization", "value": "Basic bmVvNGo6bXktcGFzc3dvcmQ=" }
     ],
