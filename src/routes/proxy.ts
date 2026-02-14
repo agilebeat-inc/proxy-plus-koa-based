@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
 import type { RegisterProxiedRouteOptions } from '../types/RegisterProxiedRoute';
+import { asyncLocalStorage } from '../localStorage';
 
 const router = new Router();
 
@@ -154,6 +155,83 @@ function getRoutePrefix(route: string): string {
   return route.replace(/\(.*\)$/, '');
 }
 
+function isMcpPostRequest(ctx: Router.RouterContext, route: string): boolean {
+  const routePrefix = getRoutePrefix(route);
+  return ctx.method === 'POST' && routePrefix === '/mcp' && ctx.path.startsWith(routePrefix);
+}
+
+function logMcpPostEvent(
+  ctx: Router.RouterContext,
+  options: Pick<RegisterProxiedRouteOptions, 'name' | 'route' | 'target'>,
+  event: 'MCP_POST_START' | 'MCP_POST_END' | 'MCP_POST_ERROR',
+  status?: number,
+  error?: string,
+  payload?: string
+): void {
+  const requestContext = asyncLocalStorage.getStore();
+
+  logger.info({
+    timestamp: new Date().toISOString(),
+    reqId: requestContext?.reqId || ctx.state?.reqId || null,
+    event,
+    method: ctx.method,
+    path: ctx.path,
+    queryParams: ctx.querystring || null,
+    route: options.route,
+    routeName: options.name,
+    target: options.target,
+    status,
+    contentType: getHeaderValueAsString(ctx.headers['content-type']),
+    payload,
+    error,
+  });
+}
+
+function getBufferedRequestBody(body: unknown): Buffer | undefined {
+  if (typeof body === 'undefined' || body === null) {
+    return undefined;
+  }
+
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+
+  if (typeof body === 'string') {
+    return Buffer.from(body);
+  }
+
+  try {
+    return Buffer.from(JSON.stringify(body));
+  } catch {
+    return Buffer.from(String(body));
+  }
+}
+
+async function captureMcpPostRequestBody(ctx: Router.RouterContext): Promise<Buffer | undefined> {
+  const bodyFromContext = getBufferedRequestBody(ctx.request.body);
+  if (bodyFromContext) {
+    return bodyFromContext;
+  }
+
+  if (!ctx.req.readable) {
+    return undefined;
+  }
+
+  return new Promise<Buffer | undefined>((resolve, reject) => {
+    const bodyChunks: Buffer[] = [];
+    ctx.req.on('data', (chunk) => bodyChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    ctx.req.on('end', () => {
+      if (bodyChunks.length === 0) {
+        resolve(undefined);
+        return;
+      }
+      resolve(Buffer.concat(bodyChunks));
+    });
+    ctx.req.on('error', reject);
+    ctx.req.on('aborted', () => reject(new Error('Client aborted while reading MCP payload')));
+  });
+}
+
 function getHeaderValueAsString(value: string | string[] | undefined): string {
   if (Array.isArray(value)) {
     return value.join(', ');
@@ -281,6 +359,66 @@ function applyProxyResponseHeaders(
   });
 }
 
+function applyProxyResponseHeadersToRawResponse(
+  res: http.ServerResponse,
+  headers: IncomingHttpHeaders
+): void {
+  Object.entries(headers).forEach(([key, value]) => {
+    if (typeof value === 'undefined') {
+      return;
+    }
+    res.setHeader(key, value);
+  });
+}
+
+function streamEventStreamResponse(
+  ctx: Router.RouterContext,
+  proxyRes: IncomingMessage,
+  headers: IncomingHttpHeaders
+): void {
+  ctx.respond = false;
+  const res = ctx.res;
+
+  res.statusCode = proxyRes.statusCode || 500;
+  applyProxyResponseHeadersToRawResponse(res, headers);
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  proxyRes.on('error', (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Upstream event-stream error for ${ctx.path}: ${message}`);
+
+    if (!res.headersSent) {
+      res.statusCode = 502;
+      res.end();
+      return;
+    }
+
+    // End the downstream stream gracefully to avoid surfacing a hard
+    // socket reset on MCP clients.
+    if (!res.writableEnded) {
+      res.end();
+    }
+  });
+
+  proxyRes.on('aborted', () => {
+    logger.warn(`Upstream event-stream aborted for ${ctx.path}`);
+    if (!res.writableEnded) {
+      res.end();
+    }
+  });
+
+  res.on('close', () => {
+    if (!proxyRes.destroyed) {
+      proxyRes.destroy();
+    }
+  });
+
+  proxyRes.pipe(res);
+}
+
 function readResponseBody(proxyRes: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const bodyChunks: Buffer[] = [];
@@ -290,16 +428,27 @@ function readResponseBody(proxyRes: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function forwardRequestBodyToProxy(ctx: Router.RouterContext, proxyReq: ClientRequest): void {
+function forwardRequestBodyToProxy(
+  ctx: Router.RouterContext,
+  proxyReq: ClientRequest,
+  requestBodyOverride?: Buffer
+): void {
+  if (requestBodyOverride) {
+    proxyReq.write(requestBodyOverride);
+    proxyReq.end();
+    return;
+  }
+
   if (ctx.req.readable) {
     ctx.req.pipe(proxyReq);
     return;
   }
 
   if (ctx.request.body) {
-    proxyReq.write(
-      typeof ctx.request.body === 'string' ? ctx.request.body : JSON.stringify(ctx.request.body)
-    );
+    const body = getBufferedRequestBody(ctx.request.body);
+    if (body) {
+      proxyReq.write(body);
+    }
     proxyReq.end();
     return;
   }
@@ -314,7 +463,13 @@ async function handleProxyResponse(
   options: { routePrefix: string; rewritebase?: boolean }
 ): Promise<void> {
   const contentType = getHeaderValueAsString(proxyRes.headers['content-type']);
+  const isEventStream = contentType.includes('text/event-stream');
   const shouldRewriteHtml = Boolean(options.rewritebase) && contentType.includes('text/html');
+
+  if (isEventStream) {
+    streamEventStreamResponse(ctx, proxyRes, headers);
+    return;
+  }
 
   if (!shouldRewriteHtml) {
     applyProxyResponseHeaders(ctx, headers);
@@ -333,7 +488,11 @@ async function handleProxyResponse(
   ctx.body = updatedBody;
 }
 
-function handleProxyForTarget(ctx: Router.RouterContext, options: RegisterProxiedRouteOptions): Promise<void> {
+function handleProxyForTarget(
+  ctx: Router.RouterContext,
+  options: RegisterProxiedRouteOptions,
+  requestBodyOverride?: Buffer
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const routePrefix = getRoutePrefix(options.route);
     logger.info(`routePrefix: ${routePrefix}`)
@@ -358,12 +517,31 @@ function handleProxyForTarget(ctx: Router.RouterContext, options: RegisterProxie
     });
 
     proxyReq.on('error', (err) => {
+      // For already-started responses (e.g. event-stream), do not attempt
+      // to rewrite response state; just log and return.
+      if (ctx.respond === false || ctx.res.headersSent) {
+        logger.warn(`Proxy request error after response start for ${ctx.path}: ${err.message}`);
+        return;
+      }
+
       ctx.status = 500;
       ctx.body = { message: 'Proxy error', error: err.message };
       reject(err);
     });
 
-    forwardRequestBodyToProxy(ctx, proxyReq);
+    ctx.req.on('aborted', () => {
+      if (!proxyReq.destroyed) {
+        proxyReq.destroy();
+      }
+    });
+
+    ctx.res.on('close', () => {
+      if (!proxyReq.destroyed) {
+        proxyReq.destroy();
+      }
+    });
+
+    forwardRequestBodyToProxy(ctx, proxyReq, requestBodyOverride);
   });
 }
 
@@ -377,16 +555,45 @@ function registerProxiedRoute({
   requestHeaderRules
 }: RegisterProxiedRouteOptions) {
   router.all(route, async (ctx) => {
+    const shouldLogMcpPost = isMcpPostRequest(ctx, route);
+    let mcpPayload: string | undefined;
+    let mcpRequestBody: Buffer | undefined;
+
+    if (shouldLogMcpPost) {
+      try {
+        mcpRequestBody = await captureMcpPostRequestBody(ctx);
+        mcpPayload = mcpRequestBody?.toString('utf8');
+      } catch (error) {
+        mcpPayload = `[unable-to-read-payload: ${error instanceof Error ? error.message : String(error)}]`;
+      }
+
+      logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_START', undefined, undefined, mcpPayload);
+    }
+
     try {
       if (handleSubpathReturns(ctx, subpathReturns)) {
+        if (shouldLogMcpPost) {
+          logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
+        }
         return;
       }
 
       if (handleHeaderConditionalReturns(ctx, conditionalReturns)) {
+        if (shouldLogMcpPost) {
+          logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
+        }
         return;
       }
 
-      await handleProxyForTarget(ctx, { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
+      await handleProxyForTarget(
+        ctx,
+        { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules },
+        mcpRequestBody
+      );
+
+      if (shouldLogMcpPost) {
+        logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
+      }
     } catch (err) {
       const logError = {
         reqId: ctx.state?.reqId || null,
@@ -398,6 +605,18 @@ function registerProxiedRoute({
         path: ctx.path,
       };
       logger.error(JSON.stringify(logError));
+
+      if (shouldLogMcpPost) {
+        logMcpPostEvent(
+          ctx,
+          { name, route, target },
+          'MCP_POST_ERROR',
+          ctx.status || 502,
+          err instanceof Error ? err.message : String(err),
+          mcpPayload
+        );
+      }
+
       ctx.status = 502;
       ctx.type = 'html';
       ctx.body = UPSTREAM_ERROR_MSG;
