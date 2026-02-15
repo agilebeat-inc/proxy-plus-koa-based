@@ -108,41 +108,11 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     route: "/mcp",
     target: "http://10.29.1.86:7475/mcp",
     requestHeaderRules: [
-      { "operation": "create", "headerName": "Authorization", "value": "{MCP_NEO4J_AUTH_HEADER}" }
+      { "operation": "create", "headerName": "Authorization", "value": "Basic bmVvNGo6bXktcGFzc3dvcmQ=" }
     ],
     policyName: "mock-always-allow",
     connectorName: "mock",
     doNotRenderButton: true,
-  },
-  {
-    name: "Button Rendered But Not Active",
-    route: "/hidden-rendered-button(.*)",
-    target: "https://google.com",
-    rewritebase: true,
-    policyName: "mock-always-deny",
-    connectorName: "mock",
-    hideIfNoAccess: false,
-    doNotRenderButton: true,
-  },
-  {
-    name: "Button Rendered But Not Active With An Icon",
-    route: "//hidden-rendered-button(.*)",
-    target: "https://google.com",
-    rewritebase: true,
-    policyName: "mock-always-deny",
-    connectorName: "mock",
-    hideIfNoAccess: false,
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"> <path stroke="none" d="M0 0h24v24H0z" fill="none"></path> <circle cx="12" cy="12" r="9"></circle> <line x1="4.6" y1="7" x2="19.4" y2="7"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="4.6" y1="17" x2="19.4" y2="17"></line> </svg>',
-  },
-  {
-    name: "Button Not Rendered But Not Active With An Icon",
-    route: "/olaf(.*)",
-    target: "https://google.com",
-    rewritebase: true,
-    policyName: "mock-always-deny",
-    connectorName: "mock",
-    hideIfNoAccess: true,
-    icon: '<svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"> <path stroke="none" d="M0 0h24v24H0z" fill="none"></path> <circle cx="12" cy="12" r="9"></circle> <line x1="4.6" y1="7" x2="19.4" y2="7"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="4.6" y1="17" x2="19.4" y2="17"></line> </svg>',
   }
 ]);
 export const DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX = "['/analytics/graph/browser', '/analytics/browser/_app']";
