@@ -45,31 +45,63 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 
 ## Environment Variables
 
-- **`DYNAMIC_ROUTES`**:  
-  JSON string defining dynamic proxy routes. Example:
-  ```json
-  [
-    {
-      "name": "analytics",
-      "route": "/analytics(.*)",
-      "target": "http://<some webapp address>:3000",
-      "requestHeaderRules": [
-        { "operation": "create", "headerName": "x-proxy-plus", "value": "true" },
-        { "operation": "update", "headerName": "x-forwarded-proto", "value": "https" },
-        {
-          "operation": "update",
-          "headerName": "x-client-type",
-          "value": "json",
-          "when": { "condition": "header", "headerName": "accept", "includes": "application/json" }
-        },
-        { "operation": "patch", "headerName": "cookie", "pattern": "session=[^;]+", "replacement": "session=REDACTED" }
-      ]
-    }
-  ]
-  ```
-  The first item on the list is the default application.
-  
-  `requestHeaderRules` are applied in order before proxying the request upstream and support CRUD-like `create`, `update`, `patch` (regex replace), and `delete`, optionally gated by a `when` header condition.
+- **`DYNAMIC_ROUTES`**:
+  JSON string for dynamic route configuration (`DynamicRoute[]`).
+
+  If `DYNAMIC_ROUTES` is not set, the app uses `DEFAULT_DYNAMIC_ROUTES` from `src/config/defaultEnv.ts`.
+
+  Parsing and interpolation behavior:
+  - Parsed once at startup.
+  - Invalid JSON falls back to an empty route list.
+  - Any string value can include placeholders like `{ENV_NAME}`.
+  - Placeholders are resolved recursively across all nested route fields.
+  - Special placeholders:
+    - `{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}` -> value of `DYNAMIC_ROUTES_INVENTORY_PREFIX`
+    - `{MCP_NEO4J_AUTH_HEADER}` -> value of `MCP_NEO4J_AUTH_HEADER`
+  - Any other placeholder uses `process.env[PLACEHOLDER]`.
+  - Unknown placeholders are left unchanged.
+
+  Route registration precedence (per route object):
+  1. If `redirect` exists, register a redirect route.
+  2. Else if `splashPage` is `true`, register the services inventory page route.
+  3. Else if `relativeFilePath` exists, register a static file route.
+  4. Else if `target` exists, register a proxied route.
+  5. Otherwise the route is ignored.
+
+  Supported `DynamicRoute` fields:
+
+  | Field | Type | Behavior |
+  | --- | --- | --- |
+  | `name` | `string` | Display/logging name; also used for services page button text. |
+  | `route` | `string` | Koa route path/pattern (for example `/analytics/(.*)`). |
+  | `target` | `string` | Upstream target URL for proxied HTTP routes. |
+  | `rewritebase` | `boolean` | For HTML responses, injects `<base href="...">` and patches CSP `base-uri`. |
+  | `redirect` | `string \| { default, conditionalRedirects[] }` | Redirects request instead of proxying; can be header-conditional. |
+  | `conditionalReturns` | `Array<{ condition, headerName, includes, return }>` | Returns a local JSON payload when header condition matches. |
+  | `subpathReturns` | `Array<{ path, return }>` | Returns a local JSON payload when `ctx.path` starts with `path`. |
+  | `requestHeaderRules` | `RequestHeaderRule[]` | Rewrites outbound proxy request headers before forwarding. |
+  | `splashPage` | `boolean` | Registers the services inventory HTML page (`DYNAMIC_ROUTES_INVENTORY_PREFIX`). |
+  | `relativeFilePath` | `string` | Serves local file content for the route. |
+  | `params` | `string` | Query/path suffix appended to the services page button link. |
+  | `policyName` | `string` | Policy metadata used by policy mapping/execution. |
+  | `connectorName` | `string` | Connector plugin metadata used by connector mapping. |
+  | `icon` | `string` | Inline SVG/HTML snippet rendered in the services page button. |
+  | `doNotRenderButton` | `boolean` | Excludes route from services inventory button rendering. |
+  | `hideIfNoAccess` | `boolean` | If unauthorized, hides button instead of rendering a disabled one. |
+  | `websocket.handler` | `'neo4j-bolt' \| 'proxy'` | Enables WebSocket handling for matching route path. |
+  | `websocket.target` | `string` | Upstream WebSocket target URL. |
+  | `websocket.authHeader` | `string` | Optional auth header used by `proxy` WebSocket handler. |
+  | `websocket.preserveQueryString` | `boolean` | When `true`, forwards query string in `proxy` WebSocket handler. |
+
+  Return-key based responses (`redirect.conditionalRedirects[].return`, `conditionalReturns[].return`, `subpathReturns[].return`) currently support:
+  - `NEO4J_BROWSER_MANIFEST`
+
+  `requestHeaderRules` details:
+  - `operation: "create"` -> sets header only if missing.
+  - `operation: "update"` -> always sets/replaces header.
+  - `operation: "patch"` -> regex replace on existing header value.
+  - `operation: "delete"` -> removes header.
+  - Optional `when` supports header conditions using `includes`, `equals`, `matches` (+ regex `flags`), or `exists`.
 
 - **`IGNORE_URLS_FOR_LOGGING_BY_PREFIX`**:  
   Comma-separated list or JSON array of URL path prefixes to ignore in request logging. Useful for suppressing logs for health checks, static assets, or other non-essential endpoints.  
@@ -85,80 +117,80 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 
 ---
 
-## Example: Default Dynamic Routes Configuration (`defaultEnv.ts`)
+## Examples Using `DEFAULT_DYNAMIC_ROUTES`
 
-Below is an example of the default dynamic routes configuration as found in `src/config/defaultEnv.ts`:
+`DEFAULT_DYNAMIC_ROUTES` in `src/config/defaultEnv.ts` is the built-in route set when `DYNAMIC_ROUTES` is not provided.  
+The examples below are copied from that default and can be reused as a starting point for custom `DYNAMIC_ROUTES` values.
 
-```typescript
-export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
-  {
-    name: "root",
-    route: "/",
-    policyName: "mock-always-allow",
-    connectorName: "simple",
-    redirect: {
-      default: "/services",
-      conditionalRedirects: [
-        {
-          condition: "header",
-          headerName: "accept",
-          includes: "application/json",
-          redirect: "/graph/manifest.json"
-        }
-      ]
-    }
+### Example 1: Root redirect + conditional return + websocket
+
+```json
+{
+  "name": "root",
+  "route": "/",
+  "policyName": "mock-always-allow",
+  "connectorName": "simple",
+  "websocket": {
+    "handler": "neo4j-bolt",
+    "target": "ws://10.29.1.86:7687"
   },
-  {
-    name: "static-files-browser-config-json",
-    route: "/graph/:neo4j.browser.config.json",
-    policyName: "mock-always-allow",
-    connectorName: "simple",
-    relativeFilePath: "src/config/neo4j.browser.config.json"
-  },
-  {
-    name: "patched-favicon-ico",
-    route: "/favicon.ico",
-    policyName: "mock-always-allow",
-    connectorName: "simple",
-    redirect: "/analytics/favicon.ico"
-  },
-  {
-    name: "patched-root-example",
-    route: "/search",
-    policyName: "mock-always-allow",
-    connectorName: "simple",
-    redirect: "/analytics/search"
-  },
-  {
-    name: "Services",
-    route: "/services",
-    policyName: "mock-always-allow",
-    connectorName: "simple",
-    splashPage: true
-  },
-  {
-    name: "Search",
-    route: "/search(.*)",
-    policyName: "mock-always-allow",
-    connectorName: "simple"
-  },
-  {
-    name: "Browser",
-    route: "/analytics/(.*)",
-    target: "http://10.29.1.86:3001",
-    rewritebase: true,
-    policyName: "mock-always-allow",
-    connectorName: "simple"
-  },
-  {
-    name: "Link Analytics",
-    route: "/graph(.*)",
-    target: "http://10.29.1.86:7474",
-    rewritebase: false,
-    policyName: "mock-always-allow",
-    connectorName: "mock"
+  "redirect": {
+    "default": "/services",
+    "conditionalRedirects": [
+      {
+        "condition": "header",
+        "headerName": "accept",
+        "includes": "application/json",
+        "return": "NEO4J_BROWSER_MANIFEST"
+      }
+    ]
   }
-]);
+}
+```
+
+### Example 2: Static file route from defaults
+
+```json
+{
+  "name": "static-files-browser-config-json",
+  "route": "/browser/:neo4j.browser.config.json",
+  "policyName": "mock-always-allow",
+  "connectorName": "simple",
+  "relativeFilePath": "src/config/neo4j.browser.config.json"
+}
+```
+
+### Example 3: Proxied HTML app with base rewriting
+
+```json
+{
+  "name": "Data Browser",
+  "route": "/analytics/(.*)",
+  "target": "http://10.29.1.86:3001",
+  "rewritebase": true,
+  "policyName": "mock-always-allow",
+  "connectorName": "simple"
+}
+```
+
+### Example 4: MCP route with header injection placeholder
+
+```json
+{
+  "name": "Link Analytics AI",
+  "route": "/mcp",
+  "target": "http://10.29.1.86:7475/mcp",
+  "requestHeaderRules": [
+    {
+      "operation": "create",
+      "headerName": "Authorization",
+      "value": "{MCP_NEO4J_AUTH_HEADER}"
+    }
+  ],
+  "policyName": "mock-always-allow",
+  "connectorName": "mock",
+  "doNotRenderButton": true
+}
 ```
 
 ---
