@@ -155,9 +155,13 @@ function getRoutePrefix(route: string): string {
   return route.replace(/\(.*\)$/, '');
 }
 
-function isMcpPostRequest(ctx: Router.RouterContext, route: string): boolean {
+function isMcpRouteRequest(ctx: Router.RouterContext, route: string): boolean {
   const routePrefix = getRoutePrefix(route);
-  return ctx.method === 'POST' && routePrefix === '/mcp' && ctx.path.startsWith(routePrefix);
+  return routePrefix === '/mcp' && ctx.path.startsWith(routePrefix);
+}
+
+function isMcpPostRequest(ctx: Router.RouterContext, route: string): boolean {
+  return ctx.method === 'POST' && isMcpRouteRequest(ctx, route);
 }
 
 function logMcpPostEvent(
@@ -371,6 +375,59 @@ function applyProxyResponseHeadersToRawResponse(
   });
 }
 
+function getJsonRpcIdFromPayload(payload?: Buffer): string | number | null {
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(payload.toString('utf8'));
+    if (typeof parsed?.id === 'string' || typeof parsed?.id === 'number') {
+      return parsed.id;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function setGentleMcpErrorResponse(
+  ctx: Router.RouterContext,
+  message: string,
+  details?: string,
+  requestBodyOverride?: Buffer
+): void {
+  if (ctx.method === 'POST') {
+    ctx.status = 503;
+    ctx.type = 'application/json';
+    ctx.body = {
+      jsonrpc: '2.0',
+      id: getJsonRpcIdFromPayload(requestBodyOverride),
+      error: {
+        code: -32001,
+        message,
+        data: details
+      }
+    };
+    return;
+  }
+
+  if (ctx.method === 'GET') {
+    ctx.status = 503;
+    ctx.type = 'text/plain';
+    ctx.body = details ? `${message}: ${details}` : message;
+    return;
+  }
+
+  ctx.status = 503;
+  ctx.type = 'application/json';
+  ctx.body = {
+    message,
+    details
+  };
+}
+
 function streamEventStreamResponse(
   ctx: Router.RouterContext,
   proxyRes: IncomingMessage,
@@ -398,16 +455,20 @@ function streamEventStreamResponse(
 
     // End the downstream stream gracefully to avoid surfacing a hard
     // socket reset on MCP clients.
-    if (!res.writableEnded) {
+    if (!res.writableEnded && !res.destroyed) {
       res.end();
     }
   });
 
   proxyRes.on('aborted', () => {
     logger.warn(`Upstream event-stream aborted for ${ctx.path}`);
-    if (!res.writableEnded) {
+    if (!res.writableEnded && !res.destroyed) {
       res.end();
     }
+  });
+
+  res.on('error', (error) => {
+    logger.warn(`Downstream event-stream error for ${ctx.path}: ${error instanceof Error ? error.message : String(error)}`);
   });
 
   res.on('close', () => {
@@ -495,6 +556,7 @@ function handleProxyForTarget(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const routePrefix = getRoutePrefix(options.route);
+    const isMcpRoute = routePrefix === '/mcp';
     logger.info(`routePrefix: ${routePrefix}`)
     const url = buildTargetUrl(ctx, options.target, routePrefix);
     const isHttps = url.protocol === 'https:';
@@ -521,6 +583,13 @@ function handleProxyForTarget(
       // to rewrite response state; just log and return.
       if (ctx.respond === false || ctx.res.headersSent) {
         logger.warn(`Proxy request error after response start for ${ctx.path}: ${err.message}`);
+        return;
+      }
+
+      if (isMcpRoute) {
+        logger.warn(`MCP upstream unavailable for ${ctx.method} ${ctx.path}: ${err.message}`);
+        setGentleMcpErrorResponse(ctx, 'MCP upstream unavailable', err.message, requestBodyOverride);
+        resolve();
         return;
       }
 
@@ -555,6 +624,7 @@ function registerProxiedRoute({
   requestHeaderRules
 }: RegisterProxiedRouteOptions) {
   router.all(route, async (ctx) => {
+    const isMcpRoute = isMcpRouteRequest(ctx, route);
     const shouldLogMcpPost = isMcpPostRequest(ctx, route);
     let mcpPayload: string | undefined;
     let mcpRequestBody: Buffer | undefined;
@@ -615,6 +685,16 @@ function registerProxiedRoute({
           err instanceof Error ? err.message : String(err),
           mcpPayload
         );
+      }
+
+      if (isMcpRoute) {
+        setGentleMcpErrorResponse(
+          ctx,
+          'MCP request failed',
+          err instanceof Error ? err.message : String(err),
+          mcpRequestBody
+        );
+        return;
       }
 
       ctx.status = 502;

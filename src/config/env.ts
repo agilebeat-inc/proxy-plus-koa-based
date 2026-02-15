@@ -1,7 +1,7 @@
 import { DynamicRoute } from '../types/DynamicRoute';
 import { getEnvVar } from '../utils/envHelper';
 import logger from '../utils/logger';
-import { DEFAULT_INJECTED_BOLT_PRINCIPAL, DEFAULT_INJECTED_BOLT_SCHEME, DEFAULT_SERVICES_HTML, DEFAULT_UPSTREAM_ERROR_MSG, DEFAULT_DYNAMIC_ROUTES, DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX, DEFAULT_ACCESS_DENY_ERROR_MSG, DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX, DEFAULT_NEO4J_BROWSER_MANIFEST } from './defaultEnv';
+import { DEFAULT_INJECTED_BOLT_PRINCIPAL, DEFAULT_INJECTED_BOLT_SCHEME, DEFAULT_MCP_NEO4J_AUTH_HEADER, DEFAULT_SERVICES_HTML, DEFAULT_UPSTREAM_ERROR_MSG, DEFAULT_DYNAMIC_ROUTES, DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX, DEFAULT_ACCESS_DENY_ERROR_MSG, DEFAULT_IGNORE_URLS_FOR_LOGGING_BY_PREFIX, DEFAULT_NEO4J_BROWSER_MANIFEST } from './defaultEnv';
 // Centralized environment variable initialization
 export const POLICY_NAME = getEnvVar('POLICY_NAME', 'mock-always-allow');
 export const CONNECTOR_PLUGIN_NAME = getEnvVar('CONNECTOR_PLUGIN_NAME', 'simple');
@@ -26,18 +26,58 @@ function getInjectedBoltCredentials(): string {
 }
 export const INJECTED_BOLT_CREDENTIALS = getInjectedBoltCredentials();
 export const INJECTED_BOLT_SCHEME = getEnvVar('INJECTED_BOLT_SCHEME', DEFAULT_INJECTED_BOLT_SCHEME);
+export const MCP_NEO4J_AUTH_HEADER = getEnvVar('MCP_NEO4J_AUTH_HEADER', DEFAULT_MCP_NEO4J_AUTH_HEADER);
+
+const DYNAMIC_ROUTE_PLACEHOLDER_REGEX = /\{([A-Z0-9_]+)\}/g;
+
+function resolveDynamicRoutePlaceholder(placeholderName: string): string | undefined {
+  if (placeholderName === 'DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX') {
+    return DYNAMIC_ROUTES_INVENTORY_PREFIX;
+  }
+  if (placeholderName === 'MCP_NEO4J_AUTH_HEADER') {
+    return MCP_NEO4J_AUTH_HEADER;
+  }
+  return process.env[placeholderName];
+}
+
+function replaceDynamicRoutePlaceholders(value: string): string {
+  return value.replace(DYNAMIC_ROUTE_PLACEHOLDER_REGEX, (match, placeholderName: string) => {
+    const resolvedValue = resolveDynamicRoutePlaceholder(placeholderName);
+    if (typeof resolvedValue === 'string') {
+      return resolvedValue;
+    }
+    logger.warn(
+      `[Environment] DYNAMIC_ROUTES placeholder '${placeholderName}' is not configured; leaving token '${match}'.`
+    );
+    return match;
+  });
+}
+
+function resolveDynamicRouteConfigValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return replaceDynamicRoutePlaceholders(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolveDynamicRouteConfigValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    const resolvedEntries = Object.entries(value).map(([key, nestedValue]) => [
+      key,
+      resolveDynamicRouteConfigValue(nestedValue)
+    ]);
+    return Object.fromEntries(resolvedEntries);
+  }
+
+  return value;
+}
 
 function getDynamicRoutes(drString: string): DynamicRoute[] {
   let dynamicRoutes: DynamicRoute[] = [];
   try {
     dynamicRoutes = JSON.parse(drString || '[]');
-    dynamicRoutes = dynamicRoutes.map(route => {
-      if (route.route.includes('{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}')) {
-        return { ...route, route: route.route.replace('{DEFAULT_DYNAMIC_ROUTES_INVENTORY_PREFIX}', DYNAMIC_ROUTES_INVENTORY_PREFIX) };
-      } else {
-        return route;
-      }
-    });
+    dynamicRoutes = dynamicRoutes.map((route) => resolveDynamicRouteConfigValue(route) as DynamicRoute);
   } catch {
     dynamicRoutes = [];
   }
