@@ -108,7 +108,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     route: "/mcp",
     target: "http://10.29.1.86:7475/mcp",
     requestHeaderRules: [
-      { "operation": "create", "headerName": "Authorization", "value": "Basic bmVvNGo6bXktcGFzc3dvcmQ=" }
+      { "operation": "create", "headerName": "Authorization", "value": "{MCP_NEO4J_AUTH_HEADER}" }
     ],
     policyName: "mock-always-allow",
     connectorName: "mock",
