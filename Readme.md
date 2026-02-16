@@ -13,6 +13,8 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 - Easily extendable for custom connectors and routes
 - Dynamic routing and static file serving
 - Conditional redirects based on request headers
+- MCP streamable HTTP support with graceful upstream error handling
+- Policy-aware services page button rendering
 
 ---
 
@@ -68,6 +70,10 @@ WebSocket support is included, which is especially useful when proxying the Neo4
   4. Else if `target` exists, register a proxied route.
   5. Otherwise the route is ignored.
 
+  Notes:
+  - WebSocket upgrade requests are handled by `src/routes/proxy-ws.ts`; HTTP redirect/proxy handlers skip them.
+  - The `splashPage` route is served at `DYNAMIC_ROUTES_INVENTORY_PREFIX`.
+
   Supported `DynamicRoute` fields:
 
   | Field | Type | Behavior |
@@ -104,17 +110,33 @@ WebSocket support is included, which is especially useful when proxying the Neo4
   - `operation: "delete"` -> removes header.
   - Optional `when` supports header conditions using `includes`, `equals`, `matches` (+ regex `flags`), or `exists`.
 
+  Proxied HTTP runtime behavior:
+  - Forwards request method, path, and query string to target after stripping the route prefix.
+  - Rewrites outbound request headers via `requestHeaderRules` and updates `host` to the target host.
+  - Rewrites absolute upstream redirect `Location` headers (3xx) back under the proxied route prefix.
+  - For `rewritebase: true` + HTML responses, removes existing `<base>`, injects a new `<base href="...">`, patches CSP `base-uri`, and omits stale `content-length`.
+  - Streams `text/event-stream` responses directly and closes streams gracefully on upstream/downstream failures.
+  - For `protocol: "mcp-streamable-http"` failures, returns gentle `503` errors (`jsonrpc` payload for `POST`, plain text for `GET`).
+
 - **`IGNORE_URLS_FOR_LOGGING_BY_PREFIX`**:  
   Comma-separated list or JSON array of URL path prefixes to ignore in request logging. Useful for suppressing logs for health checks, static assets, or other non-essential endpoints.  
   Default: `['/_app', '/health', '/metrics', '/favicon.ico', '/robots.txt', '/static', '/public']`
 
-- **`WS_TARGET_URL`**:  
-  Specifies the default WebSocket backend URL to which the proxy will forward WebSocket connections.  
-  If not set, it defaults to `ws://10.82.1.228:7687/`.  
-  Set it in your environment to point to your desired WebSocket server.
+- **`DYNAMIC_ROUTES_INVENTORY_PREFIX`**:  
+  Defines the services inventory route path used by splash pages and templates.  
+  Default: `/services`
 
-- **`LOG_LEVEL=debug`**:  
-  Turn on debug statements in your app.
+- **`MCP_NEO4J_AUTH_HEADER`**:  
+  Default auth header value that can be injected via `{MCP_NEO4J_AUTH_HEADER}` placeholder in `DYNAMIC_ROUTES`.
+
+- **`UPSTREAM_ERROR_MSG`**:  
+  HTML shown for non-MCP upstream proxy failures.
+
+- **`ACCESS_DENY_ERROR_MSG`**:  
+  HTML shown by the policy middleware when access is denied.
+
+- **`DYNAMIC_ROUTES_SERVICES_HTML`**:  
+  HTML template for the services inventory page, where buttons are injected at `<!--SERVICES_BUTTONS-->`.
 
 ---
 
@@ -199,7 +221,7 @@ The examples below are copied from that default and can be reused as a starting 
 
 ## TODO
 
-- WebSocket forwarding is implemented for only one WebSocket. Add support for multiple WebSockets.
+- Current backlog is tracked in `Todo.md`.
 
 ---
 
