@@ -1,5 +1,5 @@
 import { Middleware } from 'koa';
-import { asyncLocalStorage, RequestContext } from '../localStorage';
+import { asyncLocalStorage, RequestContext } from '../types/localStorage';
 import { getPolicyName} from '../pep/utils/policyMapper';
 
 // Import the JS connector

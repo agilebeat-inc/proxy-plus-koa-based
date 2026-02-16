@@ -1,5 +1,5 @@
 import { Middleware } from 'koa';
-import { asyncLocalStorage, RequestContext } from '../localStorage';
+import { asyncLocalStorage, RequestContext } from '../types/localStorage';
 
 // Import the JS connector
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';

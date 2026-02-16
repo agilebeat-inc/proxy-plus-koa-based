@@ -18,7 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
 import type { RegisterProxiedRouteOptions } from '../types/RegisterProxiedRoute';
-import { asyncLocalStorage } from '../localStorage';
+import { asyncLocalStorage } from '../types/localStorage';
 
 const router = new Router();
 

@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
-import { RequestContext } from '../localStorage';
+import { RequestContext } from '../types/localStorage';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
 import { runPolicy } from '../pep/policy-executor';
 import { Next } from 'koa';

@@ -1,5 +1,5 @@
 import { Middleware } from 'koa';
-import { asyncLocalStorage } from '../localStorage';
+import { asyncLocalStorage } from '../types/localStorage';
 import logger from '../utils/logger';
 import { IGNORE_URLS_FOR_LOGGING_BY_PREFIX } from '../config/env';
 

@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import logger from '../utils/logger';
-import { RequestContext } from '../localStorage';
+import { RequestContext } from '../types/localStorage';
 import { INJECTED_BOLT_CREDENTIALS, INJECTED_BOLT_PRINCIPAL, INJECTED_BOLT_SCHEME } from '../config/env';
 import { constructRequestContext, extractUserCN } from '../utils/requestContextHelper';
 import { runPolicy } from '../pep/policy-executor';

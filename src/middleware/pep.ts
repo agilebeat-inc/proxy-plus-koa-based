@@ -1,6 +1,6 @@
 // middleware/auth.ts
 import { Middleware } from 'koa';
-import { asyncLocalStorage } from '../localStorage';
+import { asyncLocalStorage } from '../types/localStorage';
 import { ACCESS_DENY_ERROR_MSG, DYNAMIC_ROUTES_INVENTORY_PREFIX } from '../config/env';
 
 

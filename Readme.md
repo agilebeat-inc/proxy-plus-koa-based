@@ -88,10 +88,10 @@ WebSocket support is included, which is especially useful when proxying the Neo4
   | `icon` | `string` | Inline SVG/HTML snippet rendered in the services page button. |
   | `doNotRenderButton` | `boolean` | Excludes route from services inventory button rendering. |
   | `hideIfNoAccess` | `boolean` | If unauthorized, hides button instead of rendering a disabled one. |
-  | `websocket.handler` | `'neo4j-bolt' \| 'proxy'` | Enables WebSocket handling for matching route path. |
+  | `websocket.handler` | `'neo4j-bolt' \| 'attu'` | Enables WebSocket handling for matching route path. |
   | `websocket.target` | `string` | Upstream WebSocket target URL. |
-  | `websocket.authHeader` | `string` | Optional auth header used by `proxy` WebSocket handler. |
-  | `websocket.preserveQueryString` | `boolean` | When `true`, forwards query string in `proxy` WebSocket handler. |
+  | `websocket.authHeader` | `string` | Optional auth header used by `attu` WebSocket handler. |
+  | `websocket.preserveQueryString` | `boolean` | When `true`, forwards query string in `attu` WebSocket handler. |
 
   Return-key based responses (`redirect.conditionalRedirects[].return`, `conditionalReturns[].return`, `subpathReturns[].return`) currently support:
   - `NEO4J_BROWSER_MANIFEST`

@@ -1,4 +1,4 @@
-import { asyncLocalStorage, RequestContext } from '../localStorage';
+import { asyncLocalStorage, RequestContext } from '../types/localStorage';
 import { getPluginName } from '../connectors/utils/connectorSettingsMapper';
 import { getPolicyName } from '../pep/utils/policyMapper';
 import { lookupUserByCN } from '../connectors/userLookup';

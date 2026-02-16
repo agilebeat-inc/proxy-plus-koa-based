@@ -1,6 +1,6 @@
 import type { RequestHeaderRule } from './RequestHeaderRule';
 
-export type DynamicRouteWebSocketHandler = 'neo4j-bolt' | 'proxy';
+export type DynamicRouteWebSocketHandler = 'neo4j-bolt' | 'attu';
 
 export interface DynamicRouteWebSocketConfig {
   handler: DynamicRouteWebSocketHandler;
