@@ -1,22 +1,28 @@
 // routes/proxy.ts
-import Router from 'koa-router';
-import http, { RequestOptions, IncomingMessage } from 'http';
-import type { ClientRequest, IncomingHttpHeaders, OutgoingHttpHeaders } from 'http';
+import fs from 'fs';
+import http, { IncomingMessage, RequestOptions } from 'http';
+import type {
+  ClientRequest,
+  IncomingHttpHeaders,
+  OutgoingHttpHeaders,
+  ServerResponse,
+} from 'http';
 import https from 'https';
+import Router from 'koa-router';
+import path from 'path';
 import { URL } from 'url';
 import {
   DYNAMIC_ROUTES,
-  SERVICES_HTML,
-  UPSTREAM_ERROR_MSG,
   DYNAMIC_ROUTES_INVENTORY_PREFIX,
   NEO4J_BROWSER_MANIFEST,
+  SERVICES_HTML,
+  UPSTREAM_ERROR_MSG,
 } from '../config/env';
 import { runPolicy } from '../pep/policy-executor';
-import { determineAndGetUserUsingReqContextAndResource, extractUserCN } from '../utils/requestContextHelper';
-import fs from 'fs';
-import path from 'path';
-import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
+import type { DynamicRoute } from '../types/DynamicRoute';
 import type { RegisterProxiedRouteOptions } from '../types/RegisterProxiedRoute';
+import { determineAndGetUserUsingReqContextAndResource } from '../utils/requestContextHelper';
+import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
 import {
   logButtonHiddenForNoAccess,
   logButtonPolicyDecision,
@@ -39,98 +45,90 @@ import {
   logStaticFileNotFound,
 } from './proxyLogging';
 
-const router = new Router();
+type RouterContext = Router.RouterContext;
+type RedirectConfig = NonNullable<DynamicRoute['redirect']>;
+type McpRouteOptions = Pick<RegisterProxiedRouteOptions, 'name' | 'route' | 'target'>;
 
+const router = new Router();
 const dynamicRoutes = DYNAMIC_ROUTES;
+
 const conditionalReturnValues: Record<string, string> = {
-  NEO4J_BROWSER_MANIFEST
+  NEO4J_BROWSER_MANIFEST,
 };
+
+const HTTP_STATUS = {
+  INTERNAL_SERVER_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  NOT_FOUND: 404,
+} as const;
+
+const CONTENT_TYPE = {
+  JSON: 'application/json',
+  HTML: 'text/html',
+  PLAIN_TEXT: 'text/plain',
+  EVENT_STREAM: 'text/event-stream',
+  IMAGE_X_ICON: 'image/x-icon',
+  OCTET_STREAM: 'application/octet-stream',
+} as const;
+
+const UPGRADE_HEADER = 'upgrade';
+const WEBSOCKET_UPGRADE_VALUE = 'websocket';
+const INACTIVE_BUTTON_STYLE = 'pointer-events: none; opacity: 0.45; cursor: not-allowed;';
+const BUTTON_ICON_STYLE = 'display: inline-flex; align-items: center; gap: 0.7em;';
 
 if (dynamicRoutes.length === 0) {
   logNoDynamicRoutesConfigured();
 }
 
-function registerRedirectRoute({
-  route,
-  redirect
-}: {
-  route: string;
-  redirect:
-    | string
-    | {
-        default: string;
-        conditionalRedirects?: Array<{
-          condition: string;
-          headerName: string;
-          includes: string;
-          redirect?: string;
-          return?: string;
-        }>;
-      };
-}) {
-  router.all(route, async (ctx) => {
-    // Do not redirect if this is a websocket upgrade request
-    const isWebSocketUpgrade =
-      ctx.headers['upgrade'] &&
-      ctx.headers['upgrade'].toLowerCase() === 'websocket';
-
-    if (isWebSocketUpgrade) {
-      return;
-    }
-
-    let targetRedirect: string;
-    let responseBody: string | null = null;
-
-    // Support redirect as a string or as an object with conditional redirects
-    if (typeof redirect === "string") {
-      targetRedirect = redirect;
-    } else {
-      targetRedirect = redirect.default;
-      if (
-        redirect.conditionalRedirects &&
-        Array.isArray(redirect.conditionalRedirects)
-      ) {
-        for (const cond of redirect.conditionalRedirects) {
-          if (
-            cond.condition === "header" &&
-            cond.headerName &&
-            cond.includes
-          ) {
-            const headerValue = ctx.headers[cond.headerName.toLowerCase()];
-            if (headerValue && headerValue.includes(cond.includes)) {
-              if (cond.return) {
-                responseBody = conditionalReturnValues[cond.return] ?? '';
-              } else if (cond.redirect) {
-                targetRedirect = cond.redirect;
-              }
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    if (responseBody !== null) {
-      ctx.type = 'application/json';
-      ctx.body = responseBody;
-      return;
-    }
-
-    ctx.redirect(`${targetRedirect}${ctx.search || ""}`);
-  });
+function getHeaderValueAsString(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+  return value ?? '';
 }
 
-function conditionalReturnToJson(ctx: Router.RouterContext, returnKey: string): void {
-  const responseBody = conditionalReturnValues[returnKey] ?? '';
-  ctx.type = 'application/json';
-  ctx.body = responseBody;
+function headerIncludes(value: string | string[] | undefined, expectedFragment: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => entry.includes(expectedFragment));
+  }
+  return typeof value === 'string' && value.includes(expectedFragment);
+}
+
+function isHeaderCondition<T extends { condition: string; headerName?: string; includes?: string }>(
+  condition: T
+): condition is T & { condition: 'header'; headerName: string; includes: string } {
+  return (
+    condition.condition === 'header' &&
+    typeof condition.headerName === 'string' &&
+    condition.headerName.length > 0 &&
+    typeof condition.includes === 'string' &&
+    condition.includes.length > 0
+  );
+}
+
+function isWebSocketUpgradeRequest(ctx: RouterContext): boolean {
+  const upgrade = ctx.headers[UPGRADE_HEADER];
+  if (Array.isArray(upgrade)) {
+    return upgrade.some((value) => value.toLowerCase() === WEBSOCKET_UPGRADE_VALUE);
+  }
+  return typeof upgrade === 'string' && upgrade.toLowerCase() === WEBSOCKET_UPGRADE_VALUE;
+}
+
+function getConditionalReturnBody(returnKey: string): string {
+  return conditionalReturnValues[returnKey] ?? '';
+}
+
+function conditionalReturnToJson(ctx: RouterContext, returnKey: string): void {
+  ctx.type = CONTENT_TYPE.JSON;
+  ctx.body = getConditionalReturnBody(returnKey);
 }
 
 function handleSubpathReturns(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   subpathReturns: RegisterProxiedRouteOptions['subpathReturns']
 ): boolean {
-  if (!subpathReturns || !Array.isArray(subpathReturns)) {
+  if (!subpathReturns) {
     return false;
   }
 
@@ -145,21 +143,21 @@ function handleSubpathReturns(
 }
 
 function handleHeaderConditionalReturns(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   conditionalReturns: RegisterProxiedRouteOptions['conditionalReturns']
 ): boolean {
-  if (!conditionalReturns || !Array.isArray(conditionalReturns)) {
+  if (!conditionalReturns) {
     return false;
   }
 
-  for (const cond of conditionalReturns) {
-    if (cond.condition !== 'header' || !cond.headerName || !cond.includes) {
+  for (const condition of conditionalReturns) {
+    if (!isHeaderCondition(condition)) {
       continue;
     }
 
-    const headerValue = ctx.headers[cond.headerName.toLowerCase()];
-    if (headerValue && headerValue.includes(cond.includes)) {
-      conditionalReturnToJson(ctx, cond.return);
+    const headerValue = ctx.headers[condition.headerName.toLowerCase()];
+    if (headerIncludes(headerValue, condition.includes)) {
+      conditionalReturnToJson(ctx, condition.return);
       return true;
     }
   }
@@ -167,10 +165,63 @@ function handleHeaderConditionalReturns(
   return false;
 }
 
+function handleConfiguredReturns(
+  ctx: RouterContext,
+  options: Pick<RegisterProxiedRouteOptions, 'subpathReturns' | 'conditionalReturns'>
+): boolean {
+  return handleSubpathReturns(ctx, options.subpathReturns) || handleHeaderConditionalReturns(ctx, options.conditionalReturns);
+}
+
+function resolveRedirect(ctx: RouterContext, redirect: RedirectConfig): { targetRedirect: string; responseBody?: string } {
+  if (typeof redirect === 'string') {
+    return { targetRedirect: redirect };
+  }
+
+  let targetRedirect = redirect.default;
+  for (const condition of redirect.conditionalRedirects ?? []) {
+    if (!isHeaderCondition(condition)) {
+      continue;
+    }
+
+    const headerValue = ctx.headers[condition.headerName.toLowerCase()];
+    if (!headerIncludes(headerValue, condition.includes)) {
+      continue;
+    }
+
+    if (condition.return) {
+      return {
+        targetRedirect,
+        responseBody: getConditionalReturnBody(condition.return),
+      };
+    }
+
+    if (condition.redirect) {
+      targetRedirect = condition.redirect;
+    }
+    break;
+  }
+
+  return { targetRedirect };
+}
+
+function registerRedirectRoute({ route, redirect }: { route: string; redirect: RedirectConfig }) {
+  router.all(route, (ctx) => {
+    if (isWebSocketUpgradeRequest(ctx)) {
+      return;
+    }
+
+    const { targetRedirect, responseBody } = resolveRedirect(ctx, redirect);
+    if (typeof responseBody !== 'undefined') {
+      ctx.type = CONTENT_TYPE.JSON;
+      ctx.body = responseBody;
+      return;
+    }
+
+    ctx.redirect(`${targetRedirect}${ctx.search || ''}`);
+  });
+}
+
 function getRoutePrefix(route: string): string {
-  // Strips off any trailing parenthesized chunk at the end of the string. 
-  // The pattern /\(.*\)$/ matches the last opening parenthesis through all following 
-  // characters up to the string end; 
   return route.replace(/\(.*\)$/, '');
 }
 
@@ -178,10 +229,7 @@ function isMcpProtocol(protocol: RegisterProxiedRouteOptions['protocol']): boole
   return protocol === 'mcp-streamable-http';
 }
 
-function isMcpPostRequest(
-  ctx: Router.RouterContext,
-  protocol: RegisterProxiedRouteOptions['protocol']
-): boolean {
+function isMcpPostRequest(ctx: RouterContext, protocol: RegisterProxiedRouteOptions['protocol']): boolean {
   return ctx.method === 'POST' && isMcpProtocol(protocol);
 }
 
@@ -205,7 +253,7 @@ function getBufferedRequestBody(body: unknown): Buffer | undefined {
   }
 }
 
-async function captureMcpPostRequestBody(ctx: Router.RouterContext): Promise<Buffer | undefined> {
+async function captureMcpPostRequestBody(ctx: RouterContext): Promise<Buffer | undefined> {
   const bodyFromContext = getBufferedRequestBody(ctx.request.body);
   if (bodyFromContext) {
     return bodyFromContext;
@@ -230,33 +278,28 @@ async function captureMcpPostRequestBody(ctx: Router.RouterContext): Promise<Buf
   });
 }
 
-function getHeaderValueAsString(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value.join(', ');
-  }
-  return value ?? '';
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function getNormalizedProxiedPath(ctx: Router.RouterContext, routePrefix: string): string {
-  if (routePrefix ===  ctx.path) {
+function getNormalizedProxiedPath(ctx: RouterContext, routePrefix: string): string {
+  if (routePrefix === ctx.path) {
     return '';
   }
-  const proxiedPath = ctx.path.replace(new RegExp(`^${routePrefix}`), '') || '/';
-  return proxiedPath.startsWith('/') ? proxiedPath : '/' + proxiedPath;
+
+  const prefixExpression = new RegExp(`^${escapeRegex(routePrefix)}`);
+  const proxiedPath = ctx.path.replace(prefixExpression, '') || '/';
+  return proxiedPath.startsWith('/') ? proxiedPath : `/${proxiedPath}`;
 }
 
-function buildTargetUrl(ctx: Router.RouterContext, target: string, routePrefix: string): URL {
-  // TODO: Refactor this method to reflect clean rules of construction target request
-  // Right now when rote prefix is equal context request it will be pass as it is
-  // with no chnages
+function buildTargetUrl(ctx: RouterContext, target: string, routePrefix: string): URL {
   const normalizedTarget = target.replace(/\/$/, '');
-  const normalizedProxiedPath = getNormalizedProxiedPath(ctx, routePrefix);
-  const targetUrl = `${normalizedTarget}${normalizedProxiedPath}${ctx.search || ''}`;
-  return new URL(targetUrl);
+  const proxiedPath = getNormalizedProxiedPath(ctx, routePrefix);
+  return new URL(`${normalizedTarget}${proxiedPath}${ctx.search || ''}`);
 }
 
 function buildProxyRequestHeaders(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   hostname: string,
   requestHeaderRules: RegisterProxiedRouteOptions['requestHeaderRules']
 ): OutgoingHttpHeaders {
@@ -264,7 +307,7 @@ function buildProxyRequestHeaders(
 }
 
 function buildProxyRequestOptions(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   url: URL,
   isHttps: boolean,
   headers: OutgoingHttpHeaders
@@ -279,11 +322,6 @@ function buildProxyRequestOptions(
   };
 }
 
-function isWebSocketUpgradeRequest(ctx: Router.RouterContext): boolean {
-  const upgrade = ctx.headers['upgrade'];
-  return typeof upgrade === 'string' && upgrade.toLowerCase() === 'websocket';
-}
-
 function rewriteLocationHeaderForRedirect(
   headers: IncomingHttpHeaders,
   statusCode: number | undefined,
@@ -293,14 +331,12 @@ function rewriteLocationHeaderForRedirect(
     return;
   }
 
-  const originalLocation = Array.isArray(headers.location)
-    ? headers.location[0]
-    : headers.location;
+  const originalLocation = Array.isArray(headers.location) ? headers.location[0] : headers.location;
   let rewrittenLocation = '';
 
   try {
     const locationUrl = new URL(originalLocation);
-    rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
+    rewrittenLocation = `${routePrefix}${locationUrl.pathname}${locationUrl.search || ''}`;
     headers.location = rewrittenLocation;
   } catch {
     logRedirectLocationRewrite(originalLocation, rewrittenLocation);
@@ -308,9 +344,8 @@ function rewriteLocationHeaderForRedirect(
 }
 
 function injectBaseHref(body: string, routePrefix: string): string {
-  let updated = body.replace(/<base[^>]*>/gi, '');
-  updated = updated.replace(/<head([^>]*)>/i, `<head$1><base href="${routePrefix}/">`);
-  return updated;
+  const withoutExistingBase = body.replace(/<base[^>]*>/gi, '');
+  return withoutExistingBase.replace(/<head([^>]*)>/i, `<head$1><base href="${routePrefix}/">`);
 }
 
 function patchContentSecurityPolicyForBaseUri(headers: IncomingHttpHeaders, baseUri: string): void {
@@ -330,22 +365,20 @@ function patchContentSecurityPolicyForBaseUri(headers: IncomingHttpHeaders, base
     return;
   }
 
-  if (Array.isArray(csp)) {
-    headers['content-security-policy'] = csp.map((entry) =>
-      /base-uri\s/.test(entry)
-        ? entry.replace(/base-uri [^;]+/, `base-uri 'self' ${baseUri}`)
-        : `${entry}; base-uri 'self' ${baseUri}`
-    );
-  }
+  headers['content-security-policy'] = csp.map((entry) =>
+    /base-uri\s/.test(entry)
+      ? entry.replace(/base-uri [^;]+/, `base-uri 'self' ${baseUri}`)
+      : `${entry}; base-uri 'self' ${baseUri}`
+  );
 }
 
 function applyProxyResponseHeaders(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   headers: IncomingHttpHeaders,
   options?: { excludeContentLength?: boolean }
 ): void {
   Object.entries(headers).forEach(([key, value]) => {
-    if (!value) {
+    if (typeof value === 'undefined') {
       return;
     }
     if (options?.excludeContentLength && key.toLowerCase() === 'content-length') {
@@ -355,10 +388,7 @@ function applyProxyResponseHeaders(
   });
 }
 
-function applyProxyResponseHeadersToRawResponse(
-  res: http.ServerResponse,
-  headers: IncomingHttpHeaders
-): void {
+function applyProxyResponseHeadersToRawResponse(res: ServerResponse, headers: IncomingHttpHeaders): void {
   Object.entries(headers).forEach(([key, value]) => {
     if (typeof value === 'undefined') {
       return;
@@ -385,50 +415,51 @@ function getJsonRpcIdFromPayload(payload?: Buffer): string | number | null {
 }
 
 function setGentleMcpErrorResponse(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   message: string,
   details?: string,
   requestBodyOverride?: Buffer
 ): void {
+  ctx.status = HTTP_STATUS.SERVICE_UNAVAILABLE;
+
   if (ctx.method === 'POST') {
-    ctx.status = 503;
-    ctx.type = 'application/json';
+    ctx.type = CONTENT_TYPE.JSON;
     ctx.body = {
       jsonrpc: '2.0',
       id: getJsonRpcIdFromPayload(requestBodyOverride),
       error: {
         code: -32001,
         message,
-        data: details
-      }
+        data: details,
+      },
     };
     return;
   }
 
   if (ctx.method === 'GET') {
-    ctx.status = 503;
-    ctx.type = 'text/plain';
+    ctx.type = CONTENT_TYPE.PLAIN_TEXT;
     ctx.body = details ? `${message}: ${details}` : message;
     return;
   }
 
-  ctx.status = 503;
-  ctx.type = 'application/json';
+  ctx.type = CONTENT_TYPE.JSON;
   ctx.body = {
     message,
-    details
+    details,
   };
 }
 
-function streamEventStreamResponse(
-  ctx: Router.RouterContext,
-  proxyRes: IncomingMessage,
-  headers: IncomingHttpHeaders
-): void {
+function endResponseIfOpen(res: ServerResponse): void {
+  if (!res.writableEnded && !res.destroyed) {
+    res.end();
+  }
+}
+
+function streamEventStreamResponse(ctx: RouterContext, proxyRes: IncomingMessage, headers: IncomingHttpHeaders): void {
   ctx.respond = false;
   const res = ctx.res;
 
-  res.statusCode = proxyRes.statusCode || 500;
+  res.statusCode = proxyRes.statusCode || HTTP_STATUS.INTERNAL_SERVER_ERROR;
   applyProxyResponseHeadersToRawResponse(res, headers);
 
   if (typeof res.flushHeaders === 'function') {
@@ -440,23 +471,18 @@ function streamEventStreamResponse(
     logEventStreamUpstreamError(ctx.path, message);
 
     if (!res.headersSent) {
-      res.statusCode = 502;
+      res.statusCode = HTTP_STATUS.BAD_GATEWAY;
       res.end();
       return;
     }
 
-    // End the downstream stream gracefully to avoid surfacing a hard
-    // socket reset on MCP clients.
-    if (!res.writableEnded && !res.destroyed) {
-      res.end();
-    }
+    // End downstream gracefully to avoid surfacing hard socket resets to clients.
+    endResponseIfOpen(res);
   });
 
   proxyRes.on('aborted', () => {
     logEventStreamUpstreamAborted(ctx.path);
-    if (!res.writableEnded && !res.destroyed) {
-      res.end();
-    }
+    endResponseIfOpen(res);
   });
 
   res.on('error', (error) => {
@@ -482,11 +508,7 @@ function readResponseBody(proxyRes: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function forwardRequestBodyToProxy(
-  ctx: Router.RouterContext,
-  proxyReq: ClientRequest,
-  requestBodyOverride?: Buffer
-): void {
+function forwardRequestBodyToProxy(ctx: RouterContext, proxyReq: ClientRequest, requestBodyOverride?: Buffer): void {
   if (requestBodyOverride) {
     proxyReq.write(requestBodyOverride);
     proxyReq.end();
@@ -511,14 +533,14 @@ function forwardRequestBodyToProxy(
 }
 
 async function handleProxyResponse(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   proxyRes: IncomingMessage,
   headers: IncomingHttpHeaders,
   options: { routePrefix: string; rewritebase?: boolean }
 ): Promise<void> {
   const contentType = getHeaderValueAsString(proxyRes.headers['content-type']);
-  const isEventStream = contentType.includes('text/event-stream');
-  const shouldRewriteHtml = Boolean(options.rewritebase) && contentType.includes('text/html');
+  const isEventStream = contentType.includes(CONTENT_TYPE.EVENT_STREAM);
+  const shouldRewriteHtml = Boolean(options.rewritebase) && contentType.includes(CONTENT_TYPE.HTML);
 
   if (isEventStream) {
     streamEventStreamResponse(ctx, proxyRes, headers);
@@ -533,7 +555,6 @@ async function handleProxyResponse(
 
   const bodyBuffer = await readResponseBody(proxyRes);
   const baseUri = `${ctx.protocol}://${ctx.host}${options.routePrefix}/`;
-
   const updatedBody = injectBaseHref(bodyBuffer.toString('utf8'), options.routePrefix);
   patchContentSecurityPolicyForBaseUri(headers, baseUri);
 
@@ -542,69 +563,104 @@ async function handleProxyResponse(
   ctx.body = updatedBody;
 }
 
+function destroyProxyRequest(proxyReq: ClientRequest): void {
+  if (!proxyReq.destroyed) {
+    proxyReq.destroy();
+  }
+}
+
+function handleProxyRequestError(
+  ctx: RouterContext,
+  error: Error,
+  isMcpRoute: boolean,
+  requestBodyOverride: Buffer | undefined,
+  resolve: () => void,
+  reject: (reason?: unknown) => void
+): void {
+  // For already-started responses (e.g. event-stream), do not rewrite response state.
+  if (ctx.respond === false || ctx.res.headersSent) {
+    logProxyRequestErrorAfterResponseStart(ctx.path, error.message);
+    return;
+  }
+
+  if (isMcpRoute) {
+    logMcpUpstreamUnavailable(ctx.method, ctx.path, error.message);
+    setGentleMcpErrorResponse(ctx, 'MCP upstream unavailable', error.message, requestBodyOverride);
+    resolve();
+    return;
+  }
+
+  ctx.status = HTTP_STATUS.INTERNAL_SERVER_ERROR;
+  ctx.body = { message: 'Proxy error', error: error.message };
+  reject(error);
+}
+
 function handleProxyForTarget(
-  ctx: Router.RouterContext,
+  ctx: RouterContext,
   options: RegisterProxiedRouteOptions,
   requestBodyOverride?: Buffer
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    if (isWebSocketUpgradeRequest(ctx)) {
+      resolve(); // WebSocket requests are handled in proxy-ws.ts
+      return;
+    }
+
     const routePrefix = getRoutePrefix(options.route);
-    const isMcpRoute = isMcpProtocol(options.protocol);
     logRoutePrefix(routePrefix);
+
     const url = buildTargetUrl(ctx, options.target, routePrefix);
     const isHttps = url.protocol === 'https:';
     const proxyReqHeaders = buildProxyRequestHeaders(ctx, url.hostname, options.requestHeaderRules);
     const requestOptions = buildProxyRequestOptions(ctx, url, isHttps, proxyReqHeaders);
 
-    if (isWebSocketUpgradeRequest(ctx)) {
-      return resolve(); // WebSocket requests are handled in websocketHandler.ts
-    }
-
     const proxyReq = (isHttps ? https : http).request(requestOptions, (proxyRes: IncomingMessage) => {
-      ctx.status = proxyRes.statusCode || 500;
+      ctx.status = proxyRes.statusCode || HTTP_STATUS.INTERNAL_SERVER_ERROR;
 
       const headers = { ...proxyRes.headers };
       rewriteLocationHeaderForRedirect(headers, proxyRes.statusCode, routePrefix);
 
-      handleProxyResponse(ctx, proxyRes, headers, { routePrefix, rewritebase: options.rewritebase })
+      handleProxyResponse(ctx, proxyRes, headers, {
+        routePrefix,
+        rewritebase: options.rewritebase,
+      })
         .then(resolve)
         .catch(reject);
     });
 
-    proxyReq.on('error', (err) => {
-      // For already-started responses (e.g. event-stream), do not attempt
-      // to rewrite response state; just log and return.
-      if (ctx.respond === false || ctx.res.headersSent) {
-        logProxyRequestErrorAfterResponseStart(ctx.path, err.message);
-        return;
-      }
-
-      if (isMcpRoute) {
-        logMcpUpstreamUnavailable(ctx.method, ctx.path, err.message);
-        setGentleMcpErrorResponse(ctx, 'MCP upstream unavailable', err.message, requestBodyOverride);
-        resolve();
-        return;
-      }
-
-      ctx.status = 500;
-      ctx.body = { message: 'Proxy error', error: err.message };
-      reject(err);
+    const isMcpRoute = isMcpProtocol(options.protocol);
+    proxyReq.on('error', (error) => {
+      handleProxyRequestError(ctx, error, isMcpRoute, requestBodyOverride, resolve, reject);
     });
 
-    ctx.req.on('aborted', () => {
-      if (!proxyReq.destroyed) {
-        proxyReq.destroy();
-      }
-    });
-
-    ctx.res.on('close', () => {
-      if (!proxyReq.destroyed) {
-        proxyReq.destroy();
-      }
-    });
+    ctx.req.on('aborted', () => destroyProxyRequest(proxyReq));
+    ctx.res.on('close', () => destroyProxyRequest(proxyReq));
 
     forwardRequestBodyToProxy(ctx, proxyReq, requestBodyOverride);
   });
+}
+
+async function captureMcpPayloadForLogging(
+  ctx: RouterContext,
+  shouldLogMcpPost: boolean,
+  mcpRouteOptions: McpRouteOptions
+): Promise<{ mcpPayload?: string; mcpRequestBody?: Buffer }> {
+  if (!shouldLogMcpPost) {
+    return {};
+  }
+
+  let mcpPayload: string | undefined;
+  let mcpRequestBody: Buffer | undefined;
+
+  try {
+    mcpRequestBody = await captureMcpPostRequestBody(ctx);
+    mcpPayload = mcpRequestBody?.toString('utf8');
+  } catch (error) {
+    mcpPayload = `[unable-to-read-payload: ${error instanceof Error ? error.message : String(error)}]`;
+  }
+
+  logMcpPostStart(ctx, mcpRouteOptions, mcpPayload);
+  return { mcpPayload, mcpRequestBody };
 }
 
 function registerProxiedRoute({
@@ -615,39 +671,27 @@ function registerProxiedRoute({
   rewritebase,
   conditionalReturns,
   subpathReturns,
-  requestHeaderRules
-}: RegisterProxiedRouteOptions) {
+  requestHeaderRules,
+}: RegisterProxiedRouteOptions): void {
   const mcpRouteOptions = { name, route, target };
 
   router.all(route, async (ctx) => {
     const isMcpRoute = isMcpProtocol(protocol);
     const shouldLogMcpPost = isMcpPostRequest(ctx, protocol);
-    let mcpPayload: string | undefined;
-    let mcpRequestBody: Buffer | undefined;
+    const { mcpPayload, mcpRequestBody } = await captureMcpPayloadForLogging(
+      ctx,
+      shouldLogMcpPost,
+      mcpRouteOptions
+    );
+
     const logMcpPostEndIfNeeded = () => {
       if (shouldLogMcpPost) {
         logMcpPostEnd(ctx, mcpRouteOptions, ctx.status, mcpPayload);
       }
     };
 
-    if (shouldLogMcpPost) {
-      try {
-        mcpRequestBody = await captureMcpPostRequestBody(ctx);
-        mcpPayload = mcpRequestBody?.toString('utf8');
-      } catch (error) {
-        mcpPayload = `[unable-to-read-payload: ${error instanceof Error ? error.message : String(error)}]`;
-      }
-
-      logMcpPostStart(ctx, mcpRouteOptions, mcpPayload);
-    }
-
     try {
-      if (handleSubpathReturns(ctx, subpathReturns)) {
-        logMcpPostEndIfNeeded();
-        return;
-      }
-
-      if (handleHeaderConditionalReturns(ctx, conditionalReturns)) {
+      if (handleConfiguredReturns(ctx, { subpathReturns, conditionalReturns })) {
         logMcpPostEndIfNeeded();
         return;
       }
@@ -659,119 +703,169 @@ function registerProxiedRoute({
       );
 
       logMcpPostEndIfNeeded();
-    } catch (err) {
-      logProxyRouteError(ctx, target, route, err);
+    } catch (error) {
+      logProxyRouteError(ctx, target, route, error);
 
       if (shouldLogMcpPost) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        logMcpPostError(ctx, mcpRouteOptions, ctx.status || 502, errorMessage, mcpPayload);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logMcpPostError(ctx, mcpRouteOptions, ctx.status || HTTP_STATUS.BAD_GATEWAY, errorMessage, mcpPayload);
       }
 
       if (isMcpRoute) {
         setGentleMcpErrorResponse(
           ctx,
           'MCP request failed',
-          err instanceof Error ? err.message : String(err),
+          error instanceof Error ? error.message : String(error),
           mcpRequestBody
         );
         return;
       }
 
-      ctx.status = 502;
-      ctx.type = 'html';
+      ctx.status = HTTP_STATUS.BAD_GATEWAY;
+      ctx.type = CONTENT_TYPE.HTML;
       ctx.body = UPSTREAM_ERROR_MSG;
     }
   });
 }
 
-function registerSplashPageRoute({ name, route }: { name: string; route: string }) {
+function getRouteButtonLabel(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function getRouteButtonHref(routeConfig: DynamicRoute): string {
+  const baseHref = routeConfig.route.replace(/\(\.\*\)$/, '');
+  if (!routeConfig.params) {
+    return baseHref;
+  }
+  return `${baseHref}${routeConfig.params.includes('?') ? routeConfig.params : `?${routeConfig.params}`}`;
+}
+
+function renderActiveButton(label: string, href: string, icon?: string): string {
+  if (icon) {
+    return `<a class="button" href="${href}"><span class="button-icon" style="${BUTTON_ICON_STYLE}">${icon}</span><span class="service-text">${label}</span></a>`;
+  }
+  return `<a class="button" href="${href}"><span class="service-text">${label}</span></a>`;
+}
+
+function renderInactiveButton(label: string, icon?: string): string {
+  if (icon) {
+    return `<span class="button" style="${INACTIVE_BUTTON_STYLE}">${icon}<span class="service-text">${label}</span></span>`;
+  }
+  return `<span class="button" style="${INACTIVE_BUTTON_STYLE}"><span class="service-text">${label}</span></span>`;
+}
+
+async function buildServiceButton(ctx: RouterContext, routeConfig: DynamicRoute): Promise<string> {
+  if (!routeConfig.target) {
+    logMissingTargetForButtonRendering(routeConfig.name, routeConfig.target);
+    return '';
+  }
+
+  if (routeConfig.doNotRenderButton === true) {
+    logButtonRenderingDisabled(routeConfig.name);
+    return '';
+  }
+
+  const href = getRouteButtonHref(routeConfig);
+  const label = getRouteButtonLabel(routeConfig.name);
+
+  const user = await determineAndGetUserUsingReqContextAndResource(ctx, routeConfig.route);
+  const isAllowed = (await runPolicy(user?.authAttributes ?? '', routeConfig.route)) || false;
+  logButtonPolicyDecision(routeConfig.route, user, isAllowed);
+
+  if (!isAllowed) {
+    if (routeConfig.hideIfNoAccess) {
+      logButtonHiddenForNoAccess(routeConfig.name, routeConfig.hideIfNoAccess);
+      return '';
+    }
+    return renderInactiveButton(label, routeConfig.icon);
+  }
+
+  return renderActiveButton(label, href, routeConfig.icon);
+}
+
+function registerSplashPageRoute(): void {
   router.get(DYNAMIC_ROUTES_INVENTORY_PREFIX, async (ctx) => {
-    ctx.type = 'html';
-    // Generate a button for each dynamic route, attaching params if present
-    const buttons = (
-      await Promise.all(dynamicRoutes.map(async r => {
-        if (!r.target) {
-          logMissingTargetForButtonRendering(r.name, r.target);
-          return '';
-        }
-        // Default behavior: render the button unless explicitly disabled in config.
-        if (r?.doNotRenderButton === true) {
-          logButtonRenderingDisabled(r.name);
-          return '';
-        }
-        const href = r.route.replace(/\(\.\*\)$/, '');
-        const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
-        let fullHref = href;
-        if (r.params) {
-          fullHref += r.params.includes('?') ? r.params : `?${r.params}`;
-        }
-
-        const user = await determineAndGetUserUsingReqContextAndResource(ctx, r.route)
-        const isAllowed = await runPolicy(user?.authAttributes ?? '', r.route) || false;
-        logButtonPolicyDecision(r.route, user, isAllowed);
-
-        if (!isAllowed) {
-          if (r?.hideIfNoAccess) {
-            logButtonHiddenForNoAccess(r.name, r.hideIfNoAccess);
-            return '';
-          }
-          if (r.icon) {
-            return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;">${r.icon}<span class="service-text">${label}</span></span>`;
-          }
-          return `<span class="button" style="pointer-events: none; opacity: 0.45; cursor: not-allowed;"><span class="service-text">${label}</span></span>`;
-        }
-
-        // Allowed: render as normal clickable button
-        if (r.icon) {
-          return `<a class="button" href="${fullHref}"><span class="button-icon" style="display: inline-flex; align-items: center; gap: 0.7em;">${r.icon}</span><span class="service-text">${label}</span></a>`;
-        }
-        return `<a class="button" href="${fullHref}"><span class="service-text">${label}</span></a>`;
-      }))
-    ).join('\n');
+    ctx.type = CONTENT_TYPE.HTML;
+    const buttons = (await Promise.all(dynamicRoutes.map((routeConfig) => buildServiceButton(ctx, routeConfig)))).join(
+      '\n'
+    );
     ctx.body = SERVICES_HTML.replace('<!--SERVICES_BUTTONS-->', buttons);
   });
 }
 
-function registerStaticFileRoute({ route, relativeFilePath }: { route: string; relativeFilePath: string }) {
+function getStaticFileContentType(relativeFilePath: string): string {
+  if (relativeFilePath.endsWith('.json')) {
+    return CONTENT_TYPE.JSON;
+  }
+  if (relativeFilePath.endsWith('.ico')) {
+    return CONTENT_TYPE.IMAGE_X_ICON;
+  }
+  return CONTENT_TYPE.OCTET_STREAM;
+}
+
+function registerStaticFileRoute({ route, relativeFilePath }: { route: string; relativeFilePath: string }): void {
   router.get(route, async (ctx) => {
     const absolutePath = path.join(process.cwd(), relativeFilePath);
     try {
-      // Ensure the path is always relative to the project root
       const fileContent = await fs.promises.readFile(absolutePath, 'utf8');
-      // Set content type based on file extension
-      if (relativeFilePath.endsWith('.json')) {
-        ctx.type = 'application/json';
-      } else if (relativeFilePath.endsWith('.ico')) {
-        ctx.type = 'image/x-icon';
-      } else {
-        ctx.type = 'application/octet-stream';
-      }
+      ctx.type = getStaticFileContentType(relativeFilePath);
       ctx.body = fileContent;
-    } catch (err) {
-      ctx.status = 404;
+    } catch (error) {
+      ctx.status = HTTP_STATUS.NOT_FOUND;
       ctx.body = { error: 'File not found' };
-      logStaticFileNotFound(route, relativeFilePath, absolutePath, err);
+      logStaticFileNotFound(route, relativeFilePath, absolutePath, error);
     }
   });
 }
 
-dynamicRoutes.forEach(({ name, route, target, protocol, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns, requestHeaderRules }) => {
+function registerDynamicRoute(routeConfig: DynamicRoute): void {
+  const {
+    name,
+    route,
+    target,
+    protocol,
+    rewritebase,
+    redirect,
+    splashPage,
+    relativeFilePath,
+    conditionalReturns,
+    subpathReturns,
+    requestHeaderRules,
+  } = routeConfig;
+
   if (redirect) {
     registerRedirectRoute({ route, redirect });
     return;
-  } else if (splashPage) {
-    registerSplashPageRoute({ name, route });
-  } else if (relativeFilePath) {
-    registerStaticFileRoute({ route, relativeFilePath });
-    return;
-  } else if (target) {
-    registerProxiedRoute({ name, route, target, protocol, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
-    return;
-  } else {
-    logRouteMissingTarget(name);
+  }
+
+  if (splashPage) {
+    registerSplashPageRoute();
     return;
   }
-});
+
+  if (relativeFilePath) {
+    registerStaticFileRoute({ route, relativeFilePath });
+    return;
+  }
+
+  if (target) {
+    registerProxiedRoute({
+      name,
+      route,
+      target,
+      protocol,
+      rewritebase,
+      conditionalReturns,
+      subpathReturns,
+      requestHeaderRules,
+    });
+    return;
+  }
+
+  logRouteMissingTarget(name);
+}
+
+dynamicRoutes.forEach(registerDynamicRoute);
 
 router.stack.forEach((route) => {
   if (route.path) {
