@@ -11,6 +11,7 @@ WebSocket support is included, which is especially useful when proxying the Neo4
 - HTTP and WebSocket proxying with Koa
 - Middleware support for logging, user context, and policy enforcement
 - Easily extendable for custom connectors and routes
+- Drop-in extensibility: integrate external user stores by adding custom JS connector plugins in `connectors/plugins` (for example `dist/connectors/plugins`), and add custom authorization logic by dropping policies in `pep/policies` (for example `dist/pep/policies`).
 - Dynamic routing and static file serving
 - Conditional redirects based on request headers
 - MCP streamable HTTP support with graceful upstream error handling
