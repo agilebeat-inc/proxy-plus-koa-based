@@ -20,7 +20,7 @@ function registerWebSocketRoutes(): RegisteredWebSocketRoute[] {
     if (!routeConfig.websocket?.target || !routeConfig.websocket.handler) {
       continue;
     }
-    if (routeConfig.websocket.handler !== 'neo4j-bolt' && routeConfig.websocket.handler !== 'proxy') {
+    if (routeConfig.websocket.handler !== 'neo4j-bolt' && routeConfig.websocket.handler !== 'attu') {
       logger.error(`Unsupported websocket handler '${routeConfig.websocket.handler}' for route ${routeConfig.route}`);
       continue;
     }
@@ -69,4 +69,3 @@ export function createWebsocketEnabledApp() {
   app.ws.use(websocketRouter);
   return app;
 }
-
