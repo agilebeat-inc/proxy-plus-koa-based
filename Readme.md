@@ -75,6 +75,7 @@ WebSocket support is included, which is especially useful when proxying the Neo4
   | `name` | `string` | Display/logging name; also used for services page button text. |
   | `route` | `string` | Koa route path/pattern (for example `/analytics/(.*)`). |
   | `target` | `string` | Upstream target URL for proxied HTTP routes. |
+  | `protocol` | `'http' \| 'mcp-streamable-http'` | Explicit protocol marker for proxied routes; use `'mcp-streamable-http'` for MCP endpoints. |
   | `rewritebase` | `boolean` | For HTML responses, injects `<base href="...">` and patches CSP `base-uri`. |
   | `redirect` | `string \| { default, conditionalRedirects[] }` | Redirects request instead of proxying; can be header-conditional. |
   | `conditionalReturns` | `Array<{ condition, headerName, includes, return }>` | Returns a local JSON payload when header condition matches. |
@@ -180,6 +181,7 @@ The examples below are copied from that default and can be reused as a starting 
   "name": "Link Analytics AI",
   "route": "/mcp",
   "target": "http://10.29.1.86:7475/mcp",
+  "protocol": "mcp-streamable-http",
   "requestHeaderRules": [
     {
       "operation": "create",

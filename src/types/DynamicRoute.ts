@@ -1,6 +1,7 @@
 import type { RequestHeaderRule } from './RequestHeaderRule';
 
 export type DynamicRouteWebSocketHandler = 'neo4j-bolt' | 'attu';
+export type DynamicRouteProtocol = 'http' | 'mcp-streamable-http';
 
 export interface DynamicRouteWebSocketConfig {
   handler: DynamicRouteWebSocketHandler;
@@ -14,6 +15,7 @@ export interface DynamicRoute {
   name: string;
   route: string;
   target: string;
+  protocol?: DynamicRouteProtocol;
   rewritebase?: boolean;
   requestHeaderRules?: RequestHeaderRule[];
   redirect?: string | {

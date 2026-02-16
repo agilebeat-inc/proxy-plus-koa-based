@@ -4,7 +4,6 @@ import http, { RequestOptions, IncomingMessage } from 'http';
 import type { ClientRequest, IncomingHttpHeaders, OutgoingHttpHeaders } from 'http';
 import https from 'https';
 import { URL } from 'url';
-import logger from '../utils/logger';
 import {
   DYNAMIC_ROUTES,
   SERVICES_HTML,
@@ -18,7 +17,27 @@ import fs from 'fs';
 import path from 'path';
 import { applyRequestHeaderRules } from '../utils/requestHeaderRules';
 import type { RegisterProxiedRouteOptions } from '../types/RegisterProxiedRoute';
-import { asyncLocalStorage } from '../types/localStorage';
+import {
+  logButtonHiddenForNoAccess,
+  logButtonPolicyDecision,
+  logButtonRenderingDisabled,
+  logEventStreamDownstreamError,
+  logEventStreamUpstreamAborted,
+  logEventStreamUpstreamError,
+  logMcpPostEnd,
+  logMcpPostError,
+  logMcpPostStart,
+  logMcpUpstreamUnavailable,
+  logMissingTargetForButtonRendering,
+  logNoDynamicRoutesConfigured,
+  logProxyRequestErrorAfterResponseStart,
+  logProxyRouteError,
+  logRedirectLocationRewrite,
+  logRegisteredRoute,
+  logRouteMissingTarget,
+  logRoutePrefix,
+  logStaticFileNotFound,
+} from './proxyLogging';
 
 const router = new Router();
 
@@ -28,7 +47,7 @@ const conditionalReturnValues: Record<string, string> = {
 };
 
 if (dynamicRoutes.length === 0) {
-  logger.warn('No dynamic routes configured. Please set the DYNAMIC_ROUTES environment variable.');
+  logNoDynamicRoutesConfigured();
 }
 
 function registerRedirectRoute({
@@ -155,40 +174,15 @@ function getRoutePrefix(route: string): string {
   return route.replace(/\(.*\)$/, '');
 }
 
-function isMcpRouteRequest(ctx: Router.RouterContext, route: string): boolean {
-  const routePrefix = getRoutePrefix(route);
-  return routePrefix === '/mcp' && ctx.path.startsWith(routePrefix);
+function isMcpProtocol(protocol: RegisterProxiedRouteOptions['protocol']): boolean {
+  return protocol === 'mcp-streamable-http';
 }
 
-function isMcpPostRequest(ctx: Router.RouterContext, route: string): boolean {
-  return ctx.method === 'POST' && isMcpRouteRequest(ctx, route);
-}
-
-function logMcpPostEvent(
+function isMcpPostRequest(
   ctx: Router.RouterContext,
-  options: Pick<RegisterProxiedRouteOptions, 'name' | 'route' | 'target'>,
-  event: 'MCP_POST_START' | 'MCP_POST_END' | 'MCP_POST_ERROR',
-  status?: number,
-  error?: string,
-  payload?: string
-): void {
-  const requestContext = asyncLocalStorage.getStore();
-
-  logger.info({
-    timestamp: new Date().toISOString(),
-    reqId: requestContext?.reqId || ctx.state?.reqId || null,
-    event,
-    method: ctx.method,
-    path: ctx.path,
-    queryParams: ctx.querystring || null,
-    route: options.route,
-    routeName: options.name,
-    target: options.target,
-    status,
-    contentType: getHeaderValueAsString(ctx.headers['content-type']),
-    payload,
-    error,
-  });
+  protocol: RegisterProxiedRouteOptions['protocol']
+): boolean {
+  return ctx.method === 'POST' && isMcpProtocol(protocol);
 }
 
 function getBufferedRequestBody(body: unknown): Buffer | undefined {
@@ -309,9 +303,7 @@ function rewriteLocationHeaderForRedirect(
     rewrittenLocation = routePrefix + locationUrl.pathname + (locationUrl.search || '');
     headers.location = rewrittenLocation;
   } catch {
-    logger.debug(
-      `Rewriting Location header for redirect: original='${originalLocation}' rewritten='${rewrittenLocation}'`
-    );
+    logRedirectLocationRewrite(originalLocation, rewrittenLocation);
   }
 }
 
@@ -445,7 +437,7 @@ function streamEventStreamResponse(
 
   proxyRes.on('error', (error) => {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`Upstream event-stream error for ${ctx.path}: ${message}`);
+    logEventStreamUpstreamError(ctx.path, message);
 
     if (!res.headersSent) {
       res.statusCode = 502;
@@ -461,14 +453,15 @@ function streamEventStreamResponse(
   });
 
   proxyRes.on('aborted', () => {
-    logger.warn(`Upstream event-stream aborted for ${ctx.path}`);
+    logEventStreamUpstreamAborted(ctx.path);
     if (!res.writableEnded && !res.destroyed) {
       res.end();
     }
   });
 
   res.on('error', (error) => {
-    logger.warn(`Downstream event-stream error for ${ctx.path}: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    logEventStreamDownstreamError(ctx.path, message);
   });
 
   res.on('close', () => {
@@ -556,8 +549,8 @@ function handleProxyForTarget(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const routePrefix = getRoutePrefix(options.route);
-    const isMcpRoute = routePrefix === '/mcp';
-    logger.info(`routePrefix: ${routePrefix}`)
+    const isMcpRoute = isMcpProtocol(options.protocol);
+    logRoutePrefix(routePrefix);
     const url = buildTargetUrl(ctx, options.target, routePrefix);
     const isHttps = url.protocol === 'https:';
     const proxyReqHeaders = buildProxyRequestHeaders(ctx, url.hostname, options.requestHeaderRules);
@@ -582,12 +575,12 @@ function handleProxyForTarget(
       // For already-started responses (e.g. event-stream), do not attempt
       // to rewrite response state; just log and return.
       if (ctx.respond === false || ctx.res.headersSent) {
-        logger.warn(`Proxy request error after response start for ${ctx.path}: ${err.message}`);
+        logProxyRequestErrorAfterResponseStart(ctx.path, err.message);
         return;
       }
 
       if (isMcpRoute) {
-        logger.warn(`MCP upstream unavailable for ${ctx.method} ${ctx.path}: ${err.message}`);
+        logMcpUpstreamUnavailable(ctx.method, ctx.path, err.message);
         setGentleMcpErrorResponse(ctx, 'MCP upstream unavailable', err.message, requestBodyOverride);
         resolve();
         return;
@@ -618,16 +611,24 @@ function registerProxiedRoute({
   name,
   route,
   target,
+  protocol,
   rewritebase,
   conditionalReturns,
   subpathReturns,
   requestHeaderRules
 }: RegisterProxiedRouteOptions) {
+  const mcpRouteOptions = { name, route, target };
+
   router.all(route, async (ctx) => {
-    const isMcpRoute = isMcpRouteRequest(ctx, route);
-    const shouldLogMcpPost = isMcpPostRequest(ctx, route);
+    const isMcpRoute = isMcpProtocol(protocol);
+    const shouldLogMcpPost = isMcpPostRequest(ctx, protocol);
     let mcpPayload: string | undefined;
     let mcpRequestBody: Buffer | undefined;
+    const logMcpPostEndIfNeeded = () => {
+      if (shouldLogMcpPost) {
+        logMcpPostEnd(ctx, mcpRouteOptions, ctx.status, mcpPayload);
+      }
+    };
 
     if (shouldLogMcpPost) {
       try {
@@ -637,54 +638,33 @@ function registerProxiedRoute({
         mcpPayload = `[unable-to-read-payload: ${error instanceof Error ? error.message : String(error)}]`;
       }
 
-      logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_START', undefined, undefined, mcpPayload);
+      logMcpPostStart(ctx, mcpRouteOptions, mcpPayload);
     }
 
     try {
       if (handleSubpathReturns(ctx, subpathReturns)) {
-        if (shouldLogMcpPost) {
-          logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
-        }
+        logMcpPostEndIfNeeded();
         return;
       }
 
       if (handleHeaderConditionalReturns(ctx, conditionalReturns)) {
-        if (shouldLogMcpPost) {
-          logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
-        }
+        logMcpPostEndIfNeeded();
         return;
       }
 
       await handleProxyForTarget(
         ctx,
-        { name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules },
+        { name, route, target, protocol, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules },
         mcpRequestBody
       );
 
-      if (shouldLogMcpPost) {
-        logMcpPostEvent(ctx, { name, route, target }, 'MCP_POST_END', ctx.status, undefined, mcpPayload);
-      }
+      logMcpPostEndIfNeeded();
     } catch (err) {
-      const logError = {
-        reqId: ctx.state?.reqId || null,
-        event: 'ERROR',
-        durationMs: ctx.state?.start ? Date.now() - ctx.state.start : undefined,
-        error: err instanceof Error ? err.message : String(err),
-        target,
-        route,
-        path: ctx.path,
-      };
-      logger.error(JSON.stringify(logError));
+      logProxyRouteError(ctx, target, route, err);
 
       if (shouldLogMcpPost) {
-        logMcpPostEvent(
-          ctx,
-          { name, route, target },
-          'MCP_POST_ERROR',
-          ctx.status || 502,
-          err instanceof Error ? err.message : String(err),
-          mcpPayload
-        );
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logMcpPostError(ctx, mcpRouteOptions, ctx.status || 502, errorMessage, mcpPayload);
       }
 
       if (isMcpRoute) {
@@ -711,12 +691,12 @@ function registerSplashPageRoute({ name, route }: { name: string; route: string 
     const buttons = (
       await Promise.all(dynamicRoutes.map(async r => {
         if (!r.target) {
-          logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because it is missing a target (value: ${r.target})`);
+          logMissingTargetForButtonRendering(r.name, r.target);
           return '';
         }
         // Default behavior: render the button unless explicitly disabled in config.
         if (r?.doNotRenderButton === true) {
-          logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because doNotRenderButton = true.`);
+          logButtonRenderingDisabled(r.name);
           return '';
         }
         const href = r.route.replace(/\(\.\*\)$/, '');
@@ -728,11 +708,11 @@ function registerSplashPageRoute({ name, route }: { name: string; route: string 
 
         const user = await determineAndGetUserUsingReqContextAndResource(ctx, r.route)
         const isAllowed = await runPolicy(user?.authAttributes ?? '', r.route) || false;
-        logger.debug(`While rendering button, for a given route: ${r.route} following user was determined ${JSON.stringify(user)}. The decsion isAllowed: ${isAllowed}`);
+        logButtonPolicyDecision(r.route, user, isAllowed);
 
         if (!isAllowed) {
           if (r?.hideIfNoAccess) {
-            logger.debug(`Ignoring route '${r.name}' for the purpose of button rendering because hideIfNoAccess = ${r.hideIfNoAccess}.`);
+            logButtonHiddenForNoAccess(r.name, r.hideIfNoAccess);
             return '';
           }
           if (r.icon) {
@@ -770,12 +750,12 @@ function registerStaticFileRoute({ route, relativeFilePath }: { route: string; r
     } catch (err) {
       ctx.status = 404;
       ctx.body = { error: 'File not found' };
-      logger.error(`File not found for static route '${route}': ${relativeFilePath} (absolute path ${absolutePath}). Error details: ${err instanceof Error ? err.message : String(err)}`);
+      logStaticFileNotFound(route, relativeFilePath, absolutePath, err);
     }
   });
 }
 
-dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns, requestHeaderRules }) => {
+dynamicRoutes.forEach(({ name, route, target, protocol, rewritebase, redirect, splashPage, relativeFilePath, conditionalReturns, subpathReturns, requestHeaderRules }) => {
   if (redirect) {
     registerRedirectRoute({ route, redirect });
     return;
@@ -785,17 +765,17 @@ dynamicRoutes.forEach(({ name, route, target, rewritebase, redirect, splashPage,
     registerStaticFileRoute({ route, relativeFilePath });
     return;
   } else if (target) {
-    registerProxiedRoute({ name, route, target, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
+    registerProxiedRoute({ name, route, target, protocol, rewritebase, conditionalReturns, subpathReturns, requestHeaderRules });
     return;
   } else {
-    logger.debug(`Ignoring route '${name}' in setting up dynamic routes because it is missing a target.`);
+    logRouteMissingTarget(name);
     return;
   }
 });
 
 router.stack.forEach((route) => {
   if (route.path) {
-    logger.debug(`[Registered Route][Methods: ${route.methods.join(', ')}] [Path: ${route.path}]`);
+    logRegisteredRoute(route.methods, route.path);
   }
 });
 

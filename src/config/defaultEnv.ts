@@ -107,6 +107,7 @@ export const DEFAULT_DYNAMIC_ROUTES = JSON.stringify([
     name: "Link Analytics AI",
     route: "/mcp",
     target: "http://10.29.1.86:7475/mcp",
+    protocol: "mcp-streamable-http",
     requestHeaderRules: [
       { "operation": "create", "headerName": "Authorization", "value": "{MCP_NEO4J_AUTH_HEADER}" }
     ],
