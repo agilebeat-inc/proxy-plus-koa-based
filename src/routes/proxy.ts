@@ -282,9 +282,9 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function getNormalizedProxiedPath(ctx: RouterContext, routePrefix: string): string {
+export function getNormalizedProxiedPath(ctx: RouterContext, routePrefix: string): string {
   if (routePrefix === ctx.path) {
-    return '';
+    return routePrefix.endsWith('/') ? '/' : '';
   }
 
   const prefixExpression = new RegExp(`^${escapeRegex(routePrefix)}`);
@@ -292,7 +292,7 @@ function getNormalizedProxiedPath(ctx: RouterContext, routePrefix: string): stri
   return proxiedPath.startsWith('/') ? proxiedPath : `/${proxiedPath}`;
 }
 
-function buildTargetUrl(ctx: RouterContext, target: string, routePrefix: string): URL {
+export function buildTargetUrl(ctx: RouterContext, target: string, routePrefix: string): URL {
   const normalizedTarget = target.replace(/\/$/, '');
   const proxiedPath = getNormalizedProxiedPath(ctx, routePrefix);
   return new URL(`${normalizedTarget}${proxiedPath}${ctx.search || ''}`);
